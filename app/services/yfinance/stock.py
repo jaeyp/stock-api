@@ -24,4 +24,12 @@ def get_stock_history(ticker: str):
         "current_price": info.get("currentPrice"),
         "market_cap": info.get("marketCap"),
         "history": history_data
+    }
+
+def get_stock_full_info(ticker: str):
+    """Get complete stock information from yfinance."""
+    stock, info = get_stock_info(ticker)
+    return {
+        "ticker": ticker,
+        "info": info
     } 

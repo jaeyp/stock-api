@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
 class StockHistory(BaseModel):
@@ -24,4 +24,12 @@ class StockResponse(BaseModel):
 
     class Config:
         title = "StockResponse"
-        description = "Complete stock information including historical data" 
+        description = "Complete stock information including historical data"
+
+class StockInfo(BaseModel):
+    ticker: str = Field(description="Stock ticker symbol")
+    info: Dict[str, Any] = Field(description="Complete stock information from yfinance")
+
+    class Config:
+        title = "StockInfo"
+        description = "Complete stock information from yfinance API" 
