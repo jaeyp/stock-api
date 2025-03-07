@@ -1,6 +1,6 @@
 fastapi==0.109.2
 uvicorn==0.27.1
-yfinance==0.2.36
+yfinance==0.2.54
 pydantic==2.6.1
 python-multipart==0.0.9
 finvizfinance==0.14.0 
