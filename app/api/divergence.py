@@ -6,15 +6,28 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+# Individual weights for each indicator (adjust as needed)
+WEIGHT_RSI = 1 #2
+WEIGHT_MACD = 10
+WEIGHT_BB = 10
+WEIGHT_ICHIMOKU = 20
+WEIGHT_DIV = 1
+WEIGHT_VP = 2 #10
+WEIGHT_VOL = 2 #10
+WEIGHT_SMI = 2 #10
+
+# Configurable slope window sizes
+MACD_SLOPE_WINDOW = 5
+SMI_SLOPE_WINDOW = 5
+
 class DivergenceResponse(BaseModel):
     ticker: str
     current_price: str
     date: str
-    trend_reversal_potential: str  # Final score in range -100 to 100 as a string with 2 decimals
+    trend_reversal_potential: str  # Final score in range -100 to 100 (string, 2 decimals)
     details: dict
 
 def calculate_rsi(data, window=14):
-    # Calculate the Relative Strength Index (RSI)
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
@@ -23,7 +36,6 @@ def calculate_rsi(data, window=14):
     return rsi
 
 def calculate_macd(data):
-    # Calculate the Moving Average Convergence Divergence (MACD) and signal line
     exp1 = data['Close'].ewm(span=12, adjust=False).mean()
     exp2 = data['Close'].ewm(span=26, adjust=False).mean()
     macd = exp1 - exp2
@@ -31,7 +43,6 @@ def calculate_macd(data):
     return macd, signal
 
 def calculate_bollinger_bands(data, window=20):
-    # Calculate Bollinger Bands (upper and lower bands) using rolling SMA and standard deviation
     sma = data['Close'].rolling(window=window).mean()
     rstd = data['Close'].rolling(window=window).std()
     upper_band = sma + (rstd * 2)
@@ -39,7 +50,6 @@ def calculate_bollinger_bands(data, window=20):
     return upper_band, lower_band
 
 def calculate_ichimoku(data):
-    # Calculate Ichimoku components
     nine_period_high = data['High'].rolling(window=9).max()
     nine_period_low = data['Low'].rolling(window=9).min()
     data['Tenkan-sen'] = (nine_period_high + nine_period_low) / 2
@@ -53,7 +63,6 @@ def calculate_ichimoku(data):
     data['Chikou Span'] = data['Close'].shift(-26)
 
 def calculate_fibonacci_levels(data):
-    # Calculate Fibonacci retracement levels based on the close prices
     max_price = data['Close'].max()
     min_price = data['Close'].min()
     difference = max_price - min_price
@@ -63,11 +72,6 @@ def calculate_fibonacci_levels(data):
     return level1, level2, level3
 
 def calculate_volume_profile(data, bins=20):
-    """
-    Calculate the volume profile based on closing prices.
-    Returns the price level (vp_peak) with the highest total volume,
-    along with the histogram and bin edges.
-    """
     prices = data['Close'].values
     volumes = data['Volume'].values
     hist, bin_edges = np.histogram(prices, bins=bins, weights=volumes)
@@ -75,28 +79,40 @@ def calculate_volume_profile(data, bins=20):
     vp_peak = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
     return vp_peak, hist, bin_edges
 
-def calculate_smi(data, k_period=5, d_period=3, smoothing=3):
-    """
-    Calculate the Stochastic Momentum Index (SMI) and its signal line (%D).
-    The formula applies double exponential smoothing to the price difference and range.
-    """
-    # Middle price
-    M = (data['High'] + data['Low']) / 2
-    # Price difference from the middle
+def calculate_smi(data, k_period=10, k_smoothing=3, k_double=3, d_period=10):
+    # Calculate highest high and lowest low over the %K period (10 days)
+    highest_high = data['High'].rolling(window=k_period).max()
+    lowest_low = data['Low'].rolling(window=k_period).min()
+    # Calculate the mid-range
+    M = (highest_high + lowest_low) / 2
+    # Difference between close and mid-range
     diff = data['Close'] - M
-    # Range
-    R = data['High'] - data['Low']
-    # Double smoothing
-    smooth_diff = diff.ewm(span=smoothing, adjust=False).mean().ewm(span=smoothing, adjust=False).mean()
-    smooth_R = R.ewm(span=smoothing, adjust=False).mean().ewm(span=smoothing, adjust=False).mean()
-    # SMI calculation; avoid division by zero
+    # Range over the period
+    R = highest_high - lowest_low
+    # Apply EMA smoothing: first smoothing then double smoothing
+    smooth_diff = diff.ewm(span=k_smoothing, adjust=False).mean().ewm(span=k_double, adjust=False).mean()
+    smooth_R = R.ewm(span=k_smoothing, adjust=False).mean().ewm(span=k_double, adjust=False).mean()
+    # Calculate SMI (%K)
     smi = 100 * (smooth_diff / (0.5 * smooth_R)).replace([np.inf, -np.inf], 0)
-    # %D is the simple moving average of SMI over d_period
-    smi_d = smi.rolling(window=d_period).mean()
+    # Calculate %D as the exponential moving average of SMI
+    smi_d = smi.ewm(span=d_period, adjust=False).mean()
     return smi, smi_d
 
+
+def compute_divergence_series(data):
+    divergences = []
+    for i in range(1, len(data)):
+        rsi_val = data['RSI'].iloc[i]
+        price_change = data['Close'].iloc[i] - data['Close'].iloc[i-1]
+        close_val = data['Close'].iloc[i]
+        if rsi_val <= 50:
+            div_val = (50 - rsi_val) * (price_change / close_val) * 5
+        else:
+            div_val = - (rsi_val - 50) * (price_change / close_val) * 5
+        divergences.append(div_val)
+    return pd.Series(divergences, index=data.index[1:])
+
 def get_stock_data(ticker):
-    # Download stock data for the past year with daily intervals
     stock_data = yf.download(ticker, period='1y', interval='1d')
     return stock_data
 
@@ -106,28 +122,23 @@ async def analyze_stock(ticker: str):
         data = get_stock_data(ticker)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
-    
     if data.empty:
         raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
-    # Calculate technical indicators
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
     calculate_ichimoku(data)
     fib_levels = calculate_fibonacci_levels(data)
     vp_peak, vp_hist, vp_bins = calculate_volume_profile(data, bins=20)
-    
-    # Calculate SMI and its signal line
     smi, smi_d = calculate_smi(data)
-    
-    # Check if Bollinger Bands data is available
-    if 'Upper Band' not in data or 'Lower Band' not in data:
-        raise HTTPException(status_code=400, detail="Bollinger Bands data is missing.")
+    div_series = compute_divergence_series(data)
+    div_series = pd.to_numeric(div_series, errors='coerce')
+
     if data['Upper Band'].empty or data['Lower Band'].empty:
         raise HTTPException(status_code=400, detail="Bollinger Bands data is empty.")
 
-    # Extract latest values as scalar floats
+    # Extract latest values
     latest_rsi = float(data['RSI'].iloc[-1])
     latest_macd = float(data['MACD'].iloc[-1])
     latest_signal = float(data['Signal'].iloc[-1])
@@ -140,107 +151,112 @@ async def analyze_stock(ticker: str):
     latest_smi = float(smi.iloc[-1])
     latest_smi_d = float(smi_d.iloc[-1])
     
-    # Get the previous day's close for volume analysis
     if len(data) < 2:
         raise HTTPException(status_code=400, detail="Not enough data for volume analysis.")
     previous_close = float(data['Close'].iloc[-2])
-    
-    # Get the latest date from the index
     latest_date = data.index[-1].strftime("%Y-%m-%d")
     
-    # ----- Signal Calculations -----
-    
-    # 1. RSI Signal (proportional; neutral at 50)
-    signal_RSI = 50 - latest_rsi
-    score_RSI = 2 * signal_RSI
+    # ----- Raw Indicator Signals -----
+    # 1. RSI: deviation from 50
+    raw_RSI = 50 - latest_rsi
+    score_RSI = WEIGHT_RSI * raw_RSI
 
-    # 2. MACD Signal (normalized relative to latest close)
-    macd_diff = latest_macd - latest_signal
-    signal_MACD = (macd_diff / latest_close) * 100  # expressed as percentage
-    score_MACD = 10 * signal_MACD
+    # 2. MACD: percentage difference between MACD and Signal
+    raw_MACD = (latest_macd - latest_signal) / latest_close * 100
+    score_MACD = WEIGHT_MACD * raw_MACD
 
-    # 3. Bollinger Bands Signal (continuous proportional signal based on SMA)
+    # Compute slopes for MACD and Signal using MACD_SLOPE_WINDOW
+    if len(data) >= MACD_SLOPE_WINDOW:
+        x = np.arange(MACD_SLOPE_WINDOW)
+        macd_values = data['MACD'].iloc[-MACD_SLOPE_WINDOW:].values
+        signal_values = data['Signal'].iloc[-MACD_SLOPE_WINDOW:].values
+        macd_slope = float(np.polyfit(x, macd_values, 1)[0])
+        signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+    else:
+        macd_slope = 0.0
+        signal_slope = 0.0
+
+    # 3. Bollinger Bands: deviation of current price from SMA relative to band width
+    latest_SMA = (latest_upper_band + latest_lower_band) / 2
     band_width = latest_upper_band - latest_lower_band
-    if band_width == 0:
-        signal_BB = 0
+    raw_BB = (latest_SMA - latest_close) / band_width if band_width != 0 else 0
+    score_BB = WEIGHT_BB * raw_BB
+
+    # 4. Ichimoku: ratio difference between current price and mid value
+    mid_value = (latest_senkou_span_a + latest_senkou_span_b) / 2
+    raw_Ichi = (latest_close - mid_value) / mid_value
+    score_Ichi = WEIGHT_ICHIMOKU * raw_Ichi
+
+    # 5. Divergence: based on RSI and price change
+    if latest_close != 0:
+        if latest_rsi <= 50:
+            raw_div = (50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5
+        else:
+            raw_div = - (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5
     else:
-        latest_SMA = (latest_upper_band + latest_lower_band) / 2
-        signal_BB = (latest_SMA - latest_close) / band_width
-    score_BB = 10 * signal_BB
+        raw_div = 0
+    score_div = WEIGHT_DIV * raw_div
 
-    # 4. Ichimoku Signal (relative difference from the mid-value of Senkou Span A & B)
-    ichimoku_mid = (latest_senkou_span_a + latest_senkou_span_b) / 2
-    signal_Ichi = (latest_close - ichimoku_mid) / ichimoku_mid
-    score_Ichi = 20 * signal_Ichi
-
-    # 5. Divergence Signal (proportional based on RSI deviation from 50 and price change)
-    price_change = latest_close - previous_close
-    constant_div = 5
-    if latest_rsi <= 50:
-        signal_div = (50 - latest_rsi) * (price_change / latest_close) * constant_div
-    else:
-        signal_div = - (latest_rsi - 50) * (price_change / latest_close) * constant_div
-    score_div = signal_div  # weight factor 1
-
-    # 6. Volume Profile Signal (relative difference between latest close and vp_peak)
+    # 6. Volume Profile: relative difference between current price and vp_peak
     distance = (latest_close - vp_peak) / vp_peak
     if distance > 0:
-        signal_VP = - distance * 100  # bearish if above vp_peak
+        raw_VP = - distance * 10
     elif distance < 0:
-        signal_VP = abs(distance) * 100  # bullish if below vp_peak
+        raw_VP = abs(distance) * 10
     else:
-        signal_VP = 0
-    score_VP = signal_VP
+        raw_VP = 0
+    score_VP = WEIGHT_VP * raw_VP
 
-    # 7. Volume Ratio Signal (proportional adjustment based on volume ratio)
-    avg_volume = float(data['Volume'].rolling(window=20).mean().iloc[-1])
+    # 7. Volume Ratio: based on ratio of today's volume to 20-day average volume
+    avg_volume = np.nanmean(data['Volume'].rolling(window=20).mean().values)
     volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1
     if latest_close < previous_close:
-        signal_Vol = - (volume_ratio - 1) * 10
+        raw_Vol = - (volume_ratio - 1) * 10
     elif latest_close > previous_close:
-        signal_Vol = (volume_ratio - 1) * 10
+        raw_Vol = (volume_ratio - 1) * 10
     else:
-        signal_Vol = 0
-    score_Vol = signal_Vol
+        raw_Vol = 0
+    score_Vol = WEIGHT_VOL * raw_Vol
 
-    # 8. SMI Signal (based on the slopes of K and D over a recent window)
-    smi_slope_window = 5
-    if len(smi) >= smi_slope_window:
-        x = np.arange(smi_slope_window)
-        k_values = smi.iloc[-smi_slope_window:].values
-        d_values = smi_d.iloc[-smi_slope_window:].values
-        k_slope = np.polyfit(x, k_values, 1)[0]
-        d_slope = np.polyfit(x, d_values, 1)[0]
-        slope_diff = float(k_slope - d_slope)  # Explicitly convert to float
+    # 8. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
+    if len(smi) >= SMI_SLOPE_WINDOW:
+        x = np.arange(SMI_SLOPE_WINDOW)
+        k_values = smi.iloc[-SMI_SLOPE_WINDOW:].values
+        d_values = smi_d.iloc[-SMI_SLOPE_WINDOW:].values
+        k_slope = float(np.polyfit(x, k_values, 1)[0])
+        d_slope = float(np.polyfit(x, d_values, 1)[0])
+        slope_diff = k_slope - d_slope
     else:
+        k_slope = 0.0
+        d_slope = 0.0
         slope_diff = 0.0
-    score_SMI = 10 * slope_diff
+    score_SMI = WEIGHT_SMI * slope_diff
 
-    # ----- Combine All Signals -----
     total_score = score_RSI + score_MACD + score_BB + score_Ichi + score_div + score_VP + score_Vol + score_SMI
+    final_score = total_score #100 * np.tanh(total_score / 20)
 
-    # ----- Normalize Total Score to Range -100 to 100 using tanh -----
-    final_score = 100 * np.tanh(total_score / 20)
-
-    # Prepare details dictionary with numbers rounded to 2 decimal places, including SMI K, D and slope_diff
     details = {
-        "RSI": {"raw_signal": round(signal_RSI, 2), "weighted_score": round(score_RSI, 2)},
-        "MACD": {"raw_signal": round(signal_MACD, 2), "weighted_score": round(score_MACD, 2)},
-        "BollingerBands": {"raw_signal": round(signal_BB, 2), "weighted_score": round(score_BB, 2)},
-        "Ichimoku": {"raw_signal": round(signal_Ichi, 2), "weighted_score": round(score_Ichi, 2)},
-        "Divergence": {"raw_signal": round(signal_div, 2), "weighted_score": round(score_div, 2)},
-        "VolumeProfile": {
-            "raw_signal": round(signal_VP, 2),
-            "weighted_score": round(score_VP, 2),
-            "vp_peak": round(vp_peak, 2)
+        "RSI": {"rsi_deviation": round(raw_RSI, 2), "weighted_score": round(score_RSI, 2)},
+        "MACD": {
+            "macd_diff_percentage": round(raw_MACD, 2),
+            "weighted_score": round(score_MACD, 2),
+            "macd": round(latest_macd, 2),
+            "signal": round(latest_signal, 2),
+            "macd_slope": round(macd_slope, 2),
+            "signal_slope": round(signal_slope, 2)
         },
-        "VolumeRatio": {"raw_signal": round(signal_Vol, 2), "weighted_score": round(score_Vol, 2)},
+        "BollingerBands": {"bb_deviation": round(raw_BB, 2), "weighted_score": round(score_BB, 2)},
+        "Ichimoku": {"ichi_ratio": round(raw_Ichi, 2), "weighted_score": round(score_Ichi, 2)},
+        "Divergence": {"divergence_value": round(raw_div, 2), "weighted_score": round(score_div, 2)},
+        "VolumeProfile": {"vp_diff": round(raw_VP, 2), "weighted_score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
+        "VolumeRatio": {"vol_ratio_value": round(raw_Vol, 2), "weighted_score": round(score_Vol, 2)},
         "SMI": {
-            "raw_signal": round(slope_diff, 2),
+            "smi_slope_diff": round(slope_diff, 2),
             "weighted_score": round(score_SMI, 2),
             "K": round(latest_smi, 2),
             "D": round(latest_smi_d, 2),
-            "slope_diff": round(slope_diff, 2)
+            "K_slope": round(k_slope, 2),
+            "D_slope": round(d_slope, 2)
         }
     }
 
