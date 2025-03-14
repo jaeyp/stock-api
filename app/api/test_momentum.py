@@ -39,7 +39,7 @@ async def get_stock_graph(ticker: str, period: str = '1y'):
         large_diff_values = scaled_close[large_diff_mask]
 
         # 📌 7. 그래프 생성
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(20, 8))
         plt.plot(close_prices.index, scaled_close, label="Normalized Close Prices", color="blue")  # 변환된 close
         plt.plot(momentum_strength.index, momentum_strength, label="Momentum Strength", color="red", linewidth=1)
 
@@ -48,7 +48,7 @@ async def get_stock_graph(ticker: str, period: str = '1y'):
 
         # 📌 9. x축 날짜를 "YYYY-MM" 형식으로 변경
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))  # 년-월 포맷 적용
-        plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))  # 2개월 간격으로 표시
+        plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=1))  # 1개월 간격으로 표시
 
         # ✅ 10. Y축 20 단위로 고정 (100, 80, 60, ..., -100)
         plt.yticks(np.arange(-100, 101, 20))  # -100에서 100까지 20 간격
