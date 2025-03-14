@@ -7,15 +7,31 @@ from pydantic import BaseModel
 router = APIRouter()
 
 # Individual weights for each indicator (adjust as needed)
-WEIGHT_RSI = 1
-WEIGHT_MACD = 10
-WEIGHT_BB = 10
-WEIGHT_ICHIMOKU = 20
-WEIGHT_DIV = 1
-WEIGHT_VP = 1
-WEIGHT_VOL = 1
-WEIGHT_SMI = 2
-
+# 공격적/보수적 매매 모드 선택 (default: 보수적)
+def get_weight_set(mode: str):
+    if mode == "aggressive":
+        return {
+            "RSI": 2,
+            "MACD": 10,
+            "BB": 10,
+            "ICHIMOKU": 20,
+            "DIV": 1,
+            "VP": 1,
+            "VOL": 1,
+            "SMI": 1,
+        }
+    else:  # 기본값: 보수적
+        return {
+            "RSI": 1,
+            "MACD": 10,
+            "BB": 10,
+            "ICHIMOKU": 20,
+            "DIV": 1,
+            "VP": 1,
+            "VOL": 1,
+            "SMI": 2,
+        }
+    
 # Configurable slope window sizes
 MACD_SLOPE_WINDOW = 5
 SMI_SLOPE_WINDOW = 4
@@ -130,7 +146,8 @@ def get_stock_data(ticker, period='1y'):
     stock_data = yf.download(ticker, period=period, interval='1d', auto_adjust=False)
     return stock_data
 
-def analyze(data):
+def analyze(data, mode="conservative"):
+    weights = get_weight_set(mode)  # 매매 스타일에 따라 가중치 설정
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -165,11 +182,11 @@ def analyze(data):
     # ----- Raw Indicator Signals -----
     # 1. RSI: deviation from 50
     raw_RSI = 50 - latest_rsi
-    score_RSI = WEIGHT_RSI * raw_RSI
+    score_RSI = weights['RSI'] * raw_RSI
 
     # 2. MACD: percentage difference between MACD and Signal
     raw_MACD = (latest_macd - latest_signal) / latest_close * 100
-    score_MACD = WEIGHT_MACD * raw_MACD
+    score_MACD = weights['MACD'] * raw_MACD
 
     # Compute slopes for MACD and Signal using MACD_SLOPE_WINDOW
     if len(data) >= MACD_SLOPE_WINDOW:
@@ -186,12 +203,12 @@ def analyze(data):
     latest_SMA = (latest_upper_band + latest_lower_band) / 2
     band_width = latest_upper_band - latest_lower_band
     raw_BB = (latest_SMA - latest_close) / band_width if band_width != 0 else 0
-    score_BB = WEIGHT_BB * raw_BB
+    score_BB = weights['BB'] * raw_BB
 
     # 4. Ichimoku: ratio difference between current price and mid value
     mid_value = (latest_senkou_span_a + latest_senkou_span_b) / 2
     raw_Ichi = (latest_close - mid_value) / mid_value
-    score_Ichi = WEIGHT_ICHIMOKU * raw_Ichi
+    score_Ichi = weights['ICHIMOKU'] * raw_Ichi
 
     # 5. Divergence: based on RSI and price change
     if latest_close != 0:
@@ -201,7 +218,7 @@ def analyze(data):
             raw_div = - (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5
     else:
         raw_div = 0
-    score_div = WEIGHT_DIV * raw_div
+    score_div = weights['DIV'] * raw_div
 
     # 6. Volume Profile: relative difference between current price and vp_peak
     distance = (latest_close - vp_peak) / vp_peak
@@ -211,7 +228,7 @@ def analyze(data):
         raw_VP = abs(distance) * 10
     else:
         raw_VP = 0
-    score_VP = WEIGHT_VP * raw_VP
+    score_VP = weights['VP'] * raw_VP
 
     # 7. Volume Ratio: based on ratio of today's volume to 20-day average volume
     avg_volume = np.nanmean(data['Volume'].rolling(window=20).mean().values)
@@ -222,7 +239,7 @@ def analyze(data):
         raw_Vol = (volume_ratio - 1) * 10
     else:
         raw_Vol = 0
-    score_Vol = WEIGHT_VOL * raw_Vol
+    score_Vol = weights['VOL'] * raw_Vol
 
     # 8. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
     if len(smi) >= SMI_SLOPE_WINDOW:
@@ -236,7 +253,7 @@ def analyze(data):
         k_slope = 0.0
         d_slope = 0.0
         slope_diff = 0.0
-    score_SMI = WEIGHT_SMI * slope_diff
+    score_SMI = weights['SMI'] * slope_diff
 
     total_score = score_RSI + score_MACD + score_BB + score_Ichi + score_div + score_VP + score_Vol + score_SMI
     final_score = total_score #100 * np.tanh(total_score / 20)
@@ -274,7 +291,7 @@ def analyze(data):
     }
 
 @router.get("/{ticker}/momentum", response_model=MomentumResponse)
-async def analyze_stock(ticker: str, period: str = '1y'):
+async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservative"):
     try:
         data = get_stock_data(ticker, period)
     except Exception as e:
@@ -282,7 +299,7 @@ async def analyze_stock(ticker: str, period: str = '1y'):
     if data.empty:
         raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
-    analysis_results = analyze(data)
+    analysis_results = analyze(data, mode)
 
     return {
         "ticker": ticker,
@@ -292,7 +309,8 @@ async def analyze_stock(ticker: str, period: str = '1y'):
         "details": analysis_results['details']
     }
 
-def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
+def analyze_all(data, mode="conservative", normalize=NORMALIZE_MOMENTUM_STRENGTH):
+    weights = get_weight_set(mode)  # 매매 스타일에 따라 가중치 설정
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -320,11 +338,11 @@ def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
 
             # RSI 신호
             raw_RSI = float(50 - latest_rsi)
-            score_RSI = WEIGHT_RSI * raw_RSI
+            score_RSI = weights['RSI'] * raw_RSI
 
             # MACD 신호
             raw_MACD = float((latest_macd - latest_signal) / latest_close * 100) if latest_close != 0 else 0.0
-            score_MACD = WEIGHT_MACD * raw_MACD
+            score_MACD = weights['MACD'] * raw_MACD
 
             # MACD 기울기 계산
             if i >= MACD_SLOPE_WINDOW:
@@ -341,12 +359,12 @@ def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
             latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
             band_width = float(latest_upper_band - latest_lower_band)
             raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
-            score_BB = WEIGHT_BB * raw_BB
+            score_BB = weights['BB'] * raw_BB
 
             # 이치모쿠
             mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
             raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
-            score_Ichi = WEIGHT_ICHIMOKU * raw_Ichi
+            score_Ichi = weights['ICHIMOKU'] * raw_Ichi
 
             # 다이버전스
             if latest_close != 0:
@@ -356,19 +374,19 @@ def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
                     raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5)
             else:
                 raw_div = 0.0
-            score_div = WEIGHT_DIV * raw_div
+            score_div = weights['DIV'] * raw_div
 
             # Volume Profile (vp_peak는 전체 데이터 기준)
             vp_peak, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
             distance = (latest_close - vp_peak) / vp_peak if vp_peak != 0 else 0.0
             raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
-            score_VP = WEIGHT_VP * raw_VP
+            score_VP = weights['VP'] * raw_VP
 
             # Volume Ratio
             avg_volume = np.nanmean(data['Volume'].iloc[max(0, i-19):i+1].mean())
             volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
             raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
-            score_Vol = WEIGHT_VOL * raw_Vol
+            score_Vol = weights['VOL'] * raw_Vol
 
             # SMI 기울기 계산
             if i >= SMI_SLOPE_WINDOW:
@@ -382,7 +400,7 @@ def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
                 k_slope = 0.0
                 d_slope = 0.0
                 slope_diff = 0.0
-            score_SMI = WEIGHT_SMI * slope_diff
+            score_SMI = weights['SMI'] * slope_diff
 
             # ✅ 최종 스코어 계산 (반드시 float 변환)
             total_score = float(
@@ -411,7 +429,7 @@ def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
     }
 
 @router.get("/{ticker}/momentum_all", response_model=MomentumStrengthResponse)
-async def analyze_stock_all(ticker: str, period: str = '1y'):
+async def analyze_stock_all(ticker: str, period: str = '1y', mode: str = "conservative"):
     try:
         data = get_stock_data(ticker, period)
     except Exception as e:
@@ -419,6 +437,6 @@ async def analyze_stock_all(ticker: str, period: str = '1y'):
     if data.empty:
         raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
-    history = analyze_all(data)
+    history = analyze_all(data, mode)
 
     return {"ticker": ticker, "history": history}

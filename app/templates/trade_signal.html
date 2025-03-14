@@ -12,18 +12,140 @@
         color: gray;
       }
       #stock-graph {
-        display: none; /* 초기에는 숨김 */
+        display: none;
         max-width: 100%;
         height: auto;
       }
+      .ticker-button {
+        margin: 4px 8px;
+        padding: 8px 12px;
+        border: none;
+        background-color: #007bff;
+        color: white;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      .ticker-button:hover {
+        background-color: #0056b3;
+      }
+      .ticker-nabak-button {
+        margin: 4px 8px;
+        padding: 8px 12px;
+        border: none;
+        background-color: #ffd60a;
+        color: black;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      .ticker-nabak-button:hover {
+        background-color: #ffc300;
+      }
+      /* ✅ 입력 필드 컨테이너 스타일 */
+      .input-container {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        margin-bottom: 12px;
+      }
+      /* ✅ 각 입력 필드 스타일 */
+      .input-container input,
+      .input-container select {
+        padding: 6px 10px;
+        font-size: 14px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        outline: none;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      /* ✅ 매매 모드 라디오 버튼 스타일 */
+      .trade-mode-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: bold;
+      }
+      /* ✅ 버튼 스타일 */
+      .input-container button {
+        padding: 8px 12px;
+        font-size: 14px;
+        border: none;
+        background-color: #28a745;
+        color: white;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      .input-container button:hover {
+        background-color: #218838;
+      }
     </style>
     <script>
+      // 관심있는 Tickers 리스트
+      const favoriteTickers = [
+        "QLD",
+        "SOXL",
+        "LABU",
+        "FSLR",
+        "PLUG",
+        "BE",
+        "STRL",
+        "BWXT",
+        "OKLO",
+        "TEM",
+        "RXRX",
+        "CRSP",
+        "ZG",
+        "RDFN",
+        "PGY",
+        "ZETA",
+        "S",
+        "PINS",
+        "U",
+        "HOOD",
+        "LUNR",
+      ];
+      const favoriteTickersNabak = ["AMZN", "CRM", "UBER"];
+
+      // 페이지 로드 시 버튼 동적 생성
+      window.onload = function () {
+        const tickerContainer = document.getElementById("favorite-tickers");
+        favoriteTickers.forEach((ticker) => {
+          let btn = document.createElement("button");
+          btn.innerText = ticker;
+          btn.className = "ticker-button";
+          btn.onclick = function () {
+            document.getElementById("ticker").value = ticker;
+            fetchGraph();
+          };
+          tickerContainer.appendChild(btn);
+        });
+        favoriteTickersNabak.forEach((ticker) => {
+          let btn = document.createElement("button");
+          btn.innerText = ticker;
+          btn.className = "ticker-nabak-button";
+          btn.onclick = function () {
+            document.getElementById("ticker").value = ticker;
+            fetchGraph();
+          };
+          tickerContainer.appendChild(btn);
+        });
+      };
+
       async function fetchGraph() {
         const ticker = document
           .getElementById("ticker")
           .value.trim()
           .toUpperCase();
-        const period = document.getElementById("period").value; // 드롭다운에서 선택한 기간 가져오기
+        const period = document.getElementById("period").value;
+        const mode = document.querySelector(
+          'input[name="trade-mode"]:checked'
+        ).value;
         const loadingText = document.getElementById("loading");
         const graphImg = document.getElementById("stock-graph");
 
@@ -36,13 +158,15 @@
         loadingText.style.display = "block";
         graphImg.style.display = "none";
 
-        const response = await fetch(`/${ticker}/test?period=${period}`);
+        const response = await fetch(
+          `/${ticker}/test?period=${period}&mode=${mode}`
+        );
         const data = await response.json();
-        loadingText.style.display = "none"; // 로딩 화면 제거
+        loadingText.style.display = "none";
 
         if (data.image) {
           graphImg.src = data.image;
-          graphImg.style.display = "block"; // 이미지 표시
+          graphImg.style.display = "block";
         } else {
           alert("No image received from API.");
         }
@@ -51,27 +175,55 @@
   </head>
   <body>
     <h1>Trade Signal</h1>
-    <label for="ticker">Ticker:</label>
-    <input
-      type="text"
-      id="ticker"
-      name="ticker"
-      value="QLD"
-      onkeydown="if(event.key === 'Enter') fetchGraph()"
-    />
 
-    <label for="period">Select Period:</label>
-    <select id="period">
-      <option value="2y">2 Year</option>
-      <option value="1y" selected>1 Year</option>
-      <option value="6mo">6 Months</option>
-      <option value="3mo">3 Months</option>
-      <option value="1mo">1 Month</option>
-    </select>
+    <!-- ✅ 모든 입력 필드를 한 줄로 묶음 -->
+    <div class="input-container">
+      <div>
+        <label for="ticker">Ticker:</label>
+        <input
+          type="text"
+          id="ticker"
+          name="ticker"
+          value="QLD"
+          onkeydown="if(event.key === 'Enter') fetchGraph()"
+        />
+      </div>
 
-    <button onclick="fetchGraph()">Get Graph</button>
-    <br /><br />
+      <div>
+        <label for="period">Period:</label>
+        <select id="period">
+          <option value="2y">2 Year</option>
+          <option value="1y" selected>1 Year</option>
+          <option value="6mo">6 Months</option>
+          <option value="3mo">3 Months</option>
+          <option value="1mo">1 Month</option>
+        </select>
+      </div>
 
+      <div class="trade-mode-group">
+        <input
+          type="radio"
+          id="conservative"
+          name="trade-mode"
+          value="conservative"
+          checked
+        />
+        <label for="conservative">Conservative</label>
+        <input
+          type="radio"
+          id="aggressive"
+          name="trade-mode"
+          value="aggressive"
+        />
+        <label for="aggressive">Aggressive</label>
+      </div>
+
+      <button onclick="fetchGraph()">Show</button>
+    </div>
+
+    <div id="favorite-tickers"></div>
+
+    <br />
     <div id="loading">Loading...</div>
     <img id="stock-graph" src="" alt="Stock Graph" style="display: none" />
   </body>

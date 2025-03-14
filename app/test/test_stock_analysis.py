@@ -1,7 +1,7 @@
 import json
 import matplotlib.pyplot as plt
 import pandas as pd
-from app.api.divergence import analyze_stock  # Ensure this import matches your project structure
+from app.api.momentum import analyze_stock  # Ensure this import matches your project structure
 
 # Load historical stock data from JSON
 def load_stock_data(file_path):
