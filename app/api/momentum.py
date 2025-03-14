@@ -20,21 +20,21 @@ WEIGHT_SMI = 2
 MACD_SLOPE_WINDOW = 5
 SMI_SLOPE_WINDOW = 4
 
-#TODO: MACD, SMI 밸류 + slope divergence 모두 적용하여 과매도+추세전환 모두 이용하여 score 계산
+#TODO: MACD, SMI 밸류 + slope 전환 모두 적용하여 과매도+추세전환 모두 이용하여 score 계산
 #TODO: eps history로 fair value 계산
 
-# Default setting for trend score normalization
-NORMALIZE_TREND_SCORES = False
+# Default setting for momentum strength normalization
+NORMALIZE_MOMENTUM_STRENGTH = False
 
-class TrendScoreResponse(BaseModel):
+class MomentumStrengthResponse(BaseModel):
     ticker: str
     history: dict  # Date -> trend score
 
-class DivergenceResponse(BaseModel):
+class MomentumResponse(BaseModel):
     ticker: str
     date: str
     current_price: str
-    trend_score: str  # Final score in range -100 to 100 (string, 2 decimals)
+    momentum_strength: str  # Final score in range -100 to 100 (string, 2 decimals)
     details: dict
 
 def calculate_rsi(data, window=14):
@@ -112,8 +112,8 @@ def compute_divergence_series(data):
         divergences.append(div_val)
     return pd.Series(divergences, index=data.index[1:])
 
-def normalize_scores_tanh(trend_scores):
-    scores = np.array(list(trend_scores.values()))
+def normalize_scores_tanh(momentum_strength):
+    scores = np.array(list(momentum_strength.values()))
     
     mean = scores.mean()
     std = scores.std()
@@ -124,7 +124,7 @@ def normalize_scores_tanh(trend_scores):
         standardized_scores = (scores - mean) / std
         normalized_scores = 100 * np.tanh(standardized_scores)
 
-    return dict(zip(trend_scores.keys(), normalized_scores))
+    return dict(zip(momentum_strength.keys(), normalized_scores))
 
 def get_stock_data(ticker, period='1y'):
     stock_data = yf.download(ticker, period=period, interval='1d', auto_adjust=False)
@@ -269,11 +269,11 @@ def analyze(data):
     return {
         "date": latest_date,
         "close": f"{latest_close:.2f}",
-        "trend_score": f"{final_score:.2f}",
+        "momentum_strength": f"{final_score:.2f}",
         "details": details
     }
 
-@router.get("/{ticker}/divergence", response_model=DivergenceResponse)
+@router.get("/{ticker}/momentum", response_model=MomentumResponse)
 async def analyze_stock(ticker: str, period: str = '1y'):
     try:
         data = get_stock_data(ticker, period)
@@ -288,21 +288,21 @@ async def analyze_stock(ticker: str, period: str = '1y'):
         "ticker": ticker,
         "date": analysis_results['date'],
         "current_price": analysis_results['close'],
-        "trend_score": analysis_results['trend_score'],
+        "momentum_strength": analysis_results['momentum_strength'],
         "details": analysis_results['details']
     }
 
-def analyze_all(data, normalize=NORMALIZE_TREND_SCORES):
+def analyze_all(data, normalize=NORMALIZE_MOMENTUM_STRENGTH):
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
     calculate_ichimoku(data)
     smi, smi_d = calculate_smi(data)
 
-    trend_scores = {}
+    momentum_strength = {}
     close_prices = {}
 
-    for i in range(1, len(data)):  # 날짜별로 trend_score 및 close 저장
+    for i in range(1, len(data)):  # 날짜별로 momentum_strength 및 close 저장
         try:
             # 🎯 NaN 처리 및 단일 숫자로 변환
             latest_close = float(np.nan_to_num(data['Close'].iloc[i], nan=0.0))
@@ -394,23 +394,23 @@ def analyze_all(data, normalize=NORMALIZE_TREND_SCORES):
             if pd.isna(final_score) or np.isnan(final_score):
                 final_score = 0.0
 
-            # 📌 trend_scores 저장
+            # 📌 momentum_strength 저장
             date_str = data.index[i].strftime("%Y-%m-%d")
-            trend_scores[date_str] = final_score
+            momentum_strength[date_str] = final_score
             close_prices[date_str] = round(latest_close, 2)
 
         except Exception as e:
             print(f"Error processing {data.index[i]}: {e}")  # 디버깅 로그
 
     if normalize:
-        trend_scores = normalize_scores_tanh(trend_scores)            
+        momentum_strength = normalize_scores_tanh(momentum_strength)            
 
     return {
         "close": close_prices,
-        "trend_scores": trend_scores
+        "momentum_strength": momentum_strength
     }
 
-@router.get("/{ticker}/divergence_all", response_model=TrendScoreResponse)
+@router.get("/{ticker}/momentum_all", response_model=MomentumStrengthResponse)
 async def analyze_stock_all(ticker: str, period: str = '1y'):
     try:
         data = get_stock_data(ticker, period)

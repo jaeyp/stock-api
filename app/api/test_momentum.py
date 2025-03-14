@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 import io
 import base64
 import matplotlib.dates as mdates  # 날짜 포맷을 위한 모듈
-from app.api.divergence import analyze_all, get_stock_data  # analyze_all 사용
+from app.api.momentum import analyze_all, get_stock_data  # analyze_all 사용
 
 router = APIRouter()
 
@@ -21,27 +21,27 @@ async def get_stock_graph(ticker: str, period: str = '1y'):
         # 📌 2. 분석 실행
         history = analyze_all(data)
 
-        # 📌 3. Close와 Trend Score 데이터 변환
+        # 📌 3. Close와 Momentum Strength 데이터 변환
         close_prices = pd.Series(history["close"])
-        trend_scores = pd.Series(history["trend_scores"])
+        momentum_strength = pd.Series(history["momentum_strength"])
 
         # ✅ 📌 4. 날짜 인덱스를 `datetime` 형식으로 변환 (1970-01 방지)
         close_prices.index = pd.to_datetime(close_prices.index)
-        trend_scores.index = pd.to_datetime(trend_scores.index)
+        momentum_strength.index = pd.to_datetime(momentum_strength.index)
 
         # 📌 5. Close 값을 -100 ~ 100 범위로 변환 (정규화)
         min_close, max_close = close_prices.min(), close_prices.max()
         scaled_close = ((close_prices - min_close) / (max_close - min_close)) * 200 - 100
 
         # 📌 6. 차이가 100 이상 나는 지점 찾기
-        large_diff_mask = np.abs(scaled_close - trend_scores) >= 100
+        large_diff_mask = np.abs(scaled_close - momentum_strength) >= 100
         large_diff_dates = close_prices.index[large_diff_mask]
         large_diff_values = scaled_close[large_diff_mask]
 
         # 📌 7. 그래프 생성
         plt.figure(figsize=(10, 5))
         plt.plot(close_prices.index, scaled_close, label="Normalized Close Prices", color="blue")  # 변환된 close
-        plt.plot(trend_scores.index, trend_scores, label="Trend Score", color="red", linewidth=1)
+        plt.plot(momentum_strength.index, momentum_strength, label="Momentum Strength", color="red", linewidth=1)
 
         # ✅ 📌 8. 차이가 100 이상인 지점에 'X' 표시
         plt.scatter(large_diff_dates, large_diff_values, color='black', marker='x', s=70, label="High Difference")
@@ -53,7 +53,7 @@ async def get_stock_graph(ticker: str, period: str = '1y'):
         # ✅ 10. Y축 20 단위로 고정 (100, 80, 60, ..., -100)
         plt.yticks(np.arange(-100, 101, 20))  # -100에서 100까지 20 간격
 
-        plt.title(f"{ticker} - Stock Prices & Trend Scores")
+        plt.title(f"{ticker} - Stock Prices & Momentum Strength")
         plt.xlabel("Date")
         plt.ylabel("Scaled Value (-100 to 100)")
         plt.legend()
