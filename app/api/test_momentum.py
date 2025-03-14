@@ -40,11 +40,15 @@ async def get_stock_graph(ticker: str, period: str = '1y'):
 
         # 📌 7. 그래프 생성
         plt.figure(figsize=(20, 8))
-        plt.plot(close_prices.index, scaled_close, label="Normalized Close Prices", color="blue")  # 변환된 close
+        plt.plot(close_prices.index, scaled_close, label="Normalized Close Prices", color="green")  # 변환된 close
         plt.plot(momentum_strength.index, momentum_strength, label="Momentum Strength", color="red", linewidth=1)
 
         # ✅ 📌 8. 차이가 100 이상인 지점에 'X' 표시
         plt.scatter(large_diff_dates, large_diff_values, color='black', marker='x', s=70, label="High Difference")
+        # ✅ X 좌표 (large_diff_dates), Y 좌표 (large_diff_values - 5), 텍스트 리스트를 한 번에 `plt.text()` 적용
+        texts = [f"{price:.2f}" for price in close_prices[large_diff_mask]]
+        for i, txt in enumerate(texts):
+            plt.text(large_diff_dates[i], large_diff_values[i] - 5, txt, fontsize=8, ha='center', color='black')
 
         # 📌 9. x축 날짜를 "YYYY-MM" 형식으로 변경
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))  # 년-월 포맷 적용

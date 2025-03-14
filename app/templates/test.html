@@ -50,15 +50,17 @@
     </script>
   </head>
   <body>
-    <h1>Momentum Strength</h1>
+    <h1>Trade Signal Pro</h1>
     <label for="ticker">Ticker:</label>
     <input type="text" id="ticker" value="AAPL" />
 
     <label for="period">Select Period:</label>
     <select id="period">
+      <option value="2y">2 Year</option>
       <option value="1y" selected>1 Year</option>
       <option value="6mo">6 Months</option>
       <option value="3mo">3 Months</option>
+      <option value="1mo">1 Month</option>
     </select>
 
     <button onclick="fetchGraph()">Get Graph</button>
