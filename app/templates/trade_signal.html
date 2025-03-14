@@ -159,7 +159,7 @@
         graphImg.style.display = "none";
 
         const response = await fetch(
-          `/${ticker}/test?period=${period}&mode=${mode}`
+          `/${ticker}/chart/trade_signal?period=${period}&mode=${mode}`
         );
         const data = await response.json();
         loadingText.style.display = "none";

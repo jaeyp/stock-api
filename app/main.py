@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from app.api import momentum, stocks, earnings, history, options
-from app.api.test_momentum import router as test_router  # test_di
+from app.api.graph.trade_signal import router as test_router  # test_di
 
 app = FastAPI(
     title="Stock API",
@@ -30,7 +30,7 @@ app.include_router(test_router)
 async def root():
     return {"message": "Welcome to Stock API"}
 
-@app.get("/chart/trade_signal", response_class=HTMLResponse)
+@app.get("/trade_signal", response_class=HTMLResponse)
 async def read_test():
     with open("app/templates/trade_signal.html", encoding="utf-8") as f:  # test.html 파일 제공
         return f.read()

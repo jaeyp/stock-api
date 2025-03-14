@@ -1,4 +1,3 @@
-import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -6,13 +5,13 @@ from fastapi import APIRouter, HTTPException
 import io
 import base64
 import matplotlib.dates as mdates  # 날짜 포맷을 위한 모듈
-from app.api.momentum import analyze_all, get_stock_data  # analyze_all 사용
+from ..momentum import analyze_all, get_stock_data  # analyze_all 사용
 
 SIGNAL_THRESHOLD = 100
 
 router = APIRouter()
 
-@router.get("/{ticker}/test")
+@router.get("/{ticker}/chart/trade_signal")
 async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conservative"):
     try:
         # 1. Ticker 데이터 가져오기
