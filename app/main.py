@@ -30,7 +30,7 @@ app.include_router(test_router)
 async def root():
     return {"message": "Welcome to Stock API"}
 
-@app.get("/test", response_class=HTMLResponse)
+@app.get("/chart/trade_signal", response_class=HTMLResponse)
 async def read_test():
-    with open("app/templates/test.html", encoding="utf-8") as f:  # test.html 파일 제공
+    with open("app/templates/trade_signal.html", encoding="utf-8") as f:  # test.html 파일 제공
         return f.read()
