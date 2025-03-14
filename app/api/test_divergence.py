@@ -11,10 +11,10 @@ from app.api.divergence import analyze_all, get_stock_data  # analyze_all 사용
 router = APIRouter()
 
 @router.get("/{ticker}/test")
-async def get_stock_graph(ticker: str):
+async def get_stock_graph(ticker: str, period: str = '1y'):
     try:
         # 📌 1. Ticker 데이터 가져오기
-        data = get_stock_data(ticker)
+        data = get_stock_data(ticker, period)
         if data.empty:
             raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 

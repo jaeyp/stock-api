@@ -17,31 +17,15 @@
         height: auto;
       }
     </style>
-  </head>
-  <body>
-    <h1>Stock Closing Prices & Trend Scores</h1>
-
-    <!-- 티커 입력 및 버튼 -->
-    <label for="ticker">Enter Stock Ticker:</label>
-    <input type="text" id="ticker" placeholder="e.g., AAPL" />
-    <button onclick="fetchStockGraph()">Get Graph</button>
-
-    <br /><br />
-
-    <!-- 로딩 화면 -->
-    <p id="loading">🔄 Loading... Please wait.</p>
-
-    <!-- 그래프 이미지 -->
-    <img id="stock-graph" src="" alt="Stock Graph" />
-
     <script>
-      function fetchStockGraph() {
+      async function fetchGraph() {
         const ticker = document
           .getElementById("ticker")
           .value.trim()
           .toUpperCase();
-        const graphImg = document.getElementById("stock-graph");
+        const period = document.getElementById("period").value; // 드롭다운에서 선택한 기간 가져오기
         const loadingText = document.getElementById("loading");
+        const graphImg = document.getElementById("stock-graph");
 
         if (!ticker) {
           alert("Please enter a valid stock ticker.");
@@ -52,23 +36,35 @@
         loadingText.style.display = "block";
         graphImg.style.display = "none";
 
-        fetch(`/${ticker}/test`)
-          .then((response) => response.json())
-          .then((data) => {
-            loadingText.style.display = "none"; // 로딩 화면 제거
-            if (data.image) {
-              graphImg.src = data.image;
-              graphImg.style.display = "block"; // 이미지 표시
-            } else {
-              alert("No image received from API.");
-            }
-          })
-          .catch((error) => {
-            loadingText.style.display = "none"; // 에러 발생 시 로딩 화면 제거
-            console.error("Error fetching graph:", error);
-            alert("Failed to load graph. Please try again.");
-          });
+        const response = await fetch(`/${ticker}/test?period=${period}`);
+        const data = await response.json();
+        loadingText.style.display = "none"; // 로딩 화면 제거
+
+        if (data.image) {
+          graphImg.src = data.image;
+          graphImg.style.display = "block"; // 이미지 표시
+        } else {
+          alert("No image received from API.");
+        }
       }
     </script>
+  </head>
+  <body>
+    <h1>Test</h1>
+    <label for="ticker">Ticker:</label>
+    <input type="text" id="ticker" value="AAPL" />
+
+    <label for="period">Select Period:</label>
+    <select id="period">
+      <option value="1y" selected>1 Year</option>
+      <option value="6mo">6 Months</option>
+      <option value="3mo">3 Months</option>
+    </select>
+
+    <button onclick="fetchGraph()">Get Graph</button>
+    <br /><br />
+
+    <div id="loading">Loading...</div>
+    <img id="stock-graph" src="" alt="Stock Graph" style="display: none" />
   </body>
 </html>

@@ -26,8 +26,6 @@ SMI_SLOPE_WINDOW = 4
 # Default setting for trend score normalization
 NORMALIZE_TREND_SCORES = False
 
-STOCK_DATA_PERIOD = '1y' #'3mo'
-
 class TrendScoreResponse(BaseModel):
     ticker: str
     history: dict  # Date -> trend score
@@ -128,9 +126,8 @@ def normalize_scores_tanh(trend_scores):
 
     return dict(zip(trend_scores.keys(), normalized_scores))
 
-def get_stock_data(ticker):
-    # Set auto_adjust to False to avoid warning
-    stock_data = yf.download(ticker, period=STOCK_DATA_PERIOD, interval='1d', auto_adjust=False)
+def get_stock_data(ticker, period='1y'):
+    stock_data = yf.download(ticker, period=period, interval='1d', auto_adjust=False)
     return stock_data
 
 def analyze(data):
@@ -277,9 +274,9 @@ def analyze(data):
     }
 
 @router.get("/{ticker}/divergence", response_model=DivergenceResponse)
-async def analyze_stock(ticker: str):
+async def analyze_stock(ticker: str, period: str = '1y'):
     try:
-        data = get_stock_data(ticker)
+        data = get_stock_data(ticker, period)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
     if data.empty:
@@ -413,11 +410,10 @@ def analyze_all(data, normalize=NORMALIZE_TREND_SCORES):
         "trend_scores": trend_scores
     }
 
-
 @router.get("/{ticker}/divergence_all", response_model=TrendScoreResponse)
-async def analyze_stock_all(ticker: str):
+async def analyze_stock_all(ticker: str, period: str = '1y'):
     try:
-        data = get_stock_data(ticker)
+        data = get_stock_data(ticker, period)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
     if data.empty:
