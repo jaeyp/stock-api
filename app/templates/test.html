@@ -52,7 +52,13 @@
   <body>
     <h1>Trade Signal Pro</h1>
     <label for="ticker">Ticker:</label>
-    <input type="text" id="ticker" value="AAPL" />
+    <input
+      type="text"
+      id="ticker"
+      name="ticker"
+      value="QLD"
+      onkeydown="if(event.key === 'Enter') fetchGraph()"
+    />
 
     <label for="period">Select Period:</label>
     <select id="period">
