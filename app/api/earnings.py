@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from app.models.earnings import EarningsResponse
 from app.services.yfinance.earnings import get_stock_earnings
+import yfinance as yf
 
 router = APIRouter()
 
-@router.get("/{ticker}/earningsHistory", response_model=EarningsResponse)
+@router.get("/{ticker}/earnings", response_model=EarningsResponse)
 async def get_stock_earnings_data(ticker: str):
     try:
         return get_stock_earnings(ticker)

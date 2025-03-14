@@ -21,4 +21,4 @@ class EarningsResponse(BaseModel):
 
     class Config:
         title = "EarningsResponse"
-        description = "Complete earnings information including historical data" 
+        description = "Complete earnings information including historical data"

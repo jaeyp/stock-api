@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Graph</title>
+  </head>
+  <body>
+    <h1>Stock Closing Prices Graph</h1>
+    <img id="stock-graph" src="" alt="Stock Graph" />
+    <script>
+      // API에서 그래프 이미지를 가져오는 함수
+      fetch("/test/divergence")
+        .then((response) => response.json())
+        .then((data) => {
+          document.getElementById("stock-graph").src = data.image; // Base64 이미지를 src에 설정
+        })
+        .catch((error) => console.error("Error fetching graph:", error));
+    </script>
+  </body>
+</html>

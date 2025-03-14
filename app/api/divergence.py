@@ -12,7 +12,7 @@ WEIGHT_MACD = 10
 WEIGHT_BB = 10
 WEIGHT_ICHIMOKU = 20
 WEIGHT_DIV = 1
-WEIGHT_VP = 2 #10
+WEIGHT_VP = 1 #10
 WEIGHT_VOL = 2 #10
 WEIGHT_SMI = 2 #10
 
@@ -20,11 +20,15 @@ WEIGHT_SMI = 2 #10
 MACD_SLOPE_WINDOW = 5
 SMI_SLOPE_WINDOW = 5
 
+class TrendScoreResponse(BaseModel):
+    ticker: str
+    trend_scores: dict  # Date -> trend score
+
 class DivergenceResponse(BaseModel):
     ticker: str
-    current_price: str
     date: str
-    trend_reversal_potential: str  # Final score in range -100 to 100 (string, 2 decimals)
+    current_price: str
+    trend_score: str  # Final score in range -100 to 100 (string, 2 decimals)
     details: dict
 
 def calculate_rsi(data, window=14):
@@ -79,25 +83,15 @@ def calculate_volume_profile(data, bins=20):
     vp_peak = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
     return vp_peak, hist, bin_edges
 
-def calculate_smi(data, k_period=10, k_smoothing=3, k_double=3, d_period=10):
-    # Calculate highest high and lowest low over the %K period (10 days)
-    highest_high = data['High'].rolling(window=k_period).max()
-    lowest_low = data['Low'].rolling(window=k_period).min()
-    # Calculate the mid-range
-    M = (highest_high + lowest_low) / 2
-    # Difference between close and mid-range
+def calculate_smi(data, k_period=5, d_period=3, smoothing=3):
+    M = (data['High'] + data['Low']) / 2
     diff = data['Close'] - M
-    # Range over the period
-    R = highest_high - lowest_low
-    # Apply EMA smoothing: first smoothing then double smoothing
-    smooth_diff = diff.ewm(span=k_smoothing, adjust=False).mean().ewm(span=k_double, adjust=False).mean()
-    smooth_R = R.ewm(span=k_smoothing, adjust=False).mean().ewm(span=k_double, adjust=False).mean()
-    # Calculate SMI (%K)
+    R = data['High'] - data['Low']
+    smooth_diff = diff.ewm(span=smoothing, adjust=False).mean().ewm(span=smoothing, adjust=False).mean()
+    smooth_R = R.ewm(span=smoothing, adjust=False).mean().ewm(span=smoothing, adjust=False).mean()
     smi = 100 * (smooth_diff / (0.5 * smooth_R)).replace([np.inf, -np.inf], 0)
-    # Calculate %D as the exponential moving average of SMI
-    smi_d = smi.ewm(span=d_period, adjust=False).mean()
+    smi_d = smi.rolling(window=d_period).mean()
     return smi, smi_d
-
 
 def compute_divergence_series(data):
     divergences = []
@@ -113,18 +107,11 @@ def compute_divergence_series(data):
     return pd.Series(divergences, index=data.index[1:])
 
 def get_stock_data(ticker):
-    stock_data = yf.download(ticker, period='1y', interval='1d')
+    # Set auto_adjust to False to avoid warning
+    stock_data = yf.download(ticker, period='1y', interval='1d', auto_adjust=False)
     return stock_data
 
-@router.get("/{ticker}/divergence", response_model=DivergenceResponse)
-async def analyze_stock(ticker: str):
-    try:
-        data = get_stock_data(ticker)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
-    if data.empty:
-        raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
-
+def analyze(data):
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -138,7 +125,7 @@ async def analyze_stock(ticker: str):
     if data['Upper Band'].empty or data['Lower Band'].empty:
         raise HTTPException(status_code=400, detail="Bollinger Bands data is empty.")
 
-    # Extract latest values
+    # Extract latest values using .iloc for single element access
     latest_rsi = float(data['RSI'].iloc[-1])
     latest_macd = float(data['MACD'].iloc[-1])
     latest_signal = float(data['Signal'].iloc[-1])
@@ -200,9 +187,9 @@ async def analyze_stock(ticker: str):
     # 6. Volume Profile: relative difference between current price and vp_peak
     distance = (latest_close - vp_peak) / vp_peak
     if distance > 0:
-        raw_VP = - distance * 10
+        raw_VP = - distance * 100
     elif distance < 0:
-        raw_VP = abs(distance) * 10
+        raw_VP = abs(distance) * 100
     else:
         raw_VP = 0
     score_VP = WEIGHT_VP * raw_VP
@@ -236,23 +223,23 @@ async def analyze_stock(ticker: str):
     final_score = total_score #100 * np.tanh(total_score / 20)
 
     details = {
-        "RSI": {"rsi_deviation": round(raw_RSI, 2), "weighted_score": round(score_RSI, 2)},
+        "RSI": {"raw": round(raw_RSI, 2), "score": round(score_RSI, 2)},
         "MACD": {
-            "macd_diff_percentage": round(raw_MACD, 2),
-            "weighted_score": round(score_MACD, 2),
+            "raw": round(raw_MACD, 2),
+            "score": round(score_MACD, 2),
             "macd": round(latest_macd, 2),
             "signal": round(latest_signal, 2),
             "macd_slope": round(macd_slope, 2),
             "signal_slope": round(signal_slope, 2)
         },
-        "BollingerBands": {"bb_deviation": round(raw_BB, 2), "weighted_score": round(score_BB, 2)},
-        "Ichimoku": {"ichi_ratio": round(raw_Ichi, 2), "weighted_score": round(score_Ichi, 2)},
-        "Divergence": {"divergence_value": round(raw_div, 2), "weighted_score": round(score_div, 2)},
-        "VolumeProfile": {"vp_diff": round(raw_VP, 2), "weighted_score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
-        "VolumeRatio": {"vol_ratio_value": round(raw_Vol, 2), "weighted_score": round(score_Vol, 2)},
+        "BollingerBands": {"raw": round(raw_BB, 2), "score": round(score_BB, 2)},
+        "Ichimoku": {"raw": round(raw_Ichi, 2), "score": round(score_Ichi, 2)},
+        "Divergence": {"raw": round(raw_div, 2), "score": round(score_div, 2)},
+        "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
+        "VolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
         "SMI": {
-            "smi_slope_diff": round(slope_diff, 2),
-            "weighted_score": round(score_SMI, 2),
+            "raw": round(slope_diff, 2),
+            "score": round(score_SMI, 2),
             "K": round(latest_smi, 2),
             "D": round(latest_smi_d, 2),
             "K_slope": round(k_slope, 2),
@@ -261,9 +248,113 @@ async def analyze_stock(ticker: str):
     }
 
     return {
-        "ticker": ticker,
-        "current_price": f"{latest_close:.2f}",
         "date": latest_date,
-        "trend_reversal_potential": f"{final_score:.2f}",
+        "close": f"{latest_close:.2f}",
+        "trend_score": f"{final_score:.2f}",
         "details": details
     }
+
+@router.get("/{ticker}/divergence", response_model=DivergenceResponse)
+async def analyze_stock(ticker: str):
+    try:
+        data = get_stock_data(ticker)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
+    if data.empty:
+        raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
+
+    analysis_results = analyze(data)
+
+    return {
+        "ticker": ticker,
+        "date": analysis_results['date'],
+        "current_price": analysis_results['close'],
+        "trend_score": analysis_results['trend_score'],
+        "details": analysis_results['details']
+    }
+
+def analyze_all(data):
+    data['RSI'] = calculate_rsi(data)
+    data['MACD'], data['Signal'] = calculate_macd(data)
+    data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
+    calculate_ichimoku(data)
+    smi, smi_d = calculate_smi(data)
+
+    trend_scores = {}
+
+    for i in range(1, len(data)):  # 날짜별로 trend_score 계산
+        try:
+            # 🎯 NaN 처리 및 단일 숫자로 변환
+            latest_close = float(np.nan_to_num(data['Close'].iloc[i], nan=0.0))
+            latest_rsi = float(np.nan_to_num(data['RSI'].iloc[i], nan=50.0))
+            latest_macd = float(np.nan_to_num(data['MACD'].iloc[i], nan=0.0))
+            latest_signal = float(np.nan_to_num(data['Signal'].iloc[i], nan=0.0))
+            latest_upper_band = float(np.nan_to_num(data['Upper Band'].iloc[i], nan=latest_close))
+            latest_lower_band = float(np.nan_to_num(data['Lower Band'].iloc[i], nan=latest_close))
+            latest_senkou_span_a = float(np.nan_to_num(data['Senkou Span A'].iloc[i], nan=latest_close))
+            latest_senkou_span_b = float(np.nan_to_num(data['Senkou Span B'].iloc[i], nan=latest_close))
+            latest_volume = float(np.nan_to_num(data['Volume'].iloc[i], nan=1.0))
+            latest_smi = float(np.nan_to_num(smi.iloc[i], nan=0.0))
+            latest_smi_d = float(np.nan_to_num(smi_d.iloc[i], nan=0.0))
+            previous_close = float(np.nan_to_num(data['Close'].iloc[i - 1], nan=latest_close))
+
+            # RSI 신호
+            raw_RSI = float(50 - latest_rsi)  # 🎯 float 변환 추가
+            score_RSI = WEIGHT_RSI * raw_RSI
+
+            # MACD 신호
+            raw_MACD = float((latest_macd - latest_signal) / latest_close * 100) if latest_close != 0 else 0.0
+            score_MACD = WEIGHT_MACD * raw_MACD
+
+            # 볼린저 밴드
+            latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
+            band_width = float(latest_upper_band - latest_lower_band)
+            raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
+            score_BB = WEIGHT_BB * raw_BB
+
+            # 이치모쿠
+            mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
+            raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
+            score_Ichi = WEIGHT_ICHIMOKU * raw_Ichi
+
+            # 다이버전스
+            if latest_close != 0:
+                if latest_rsi <= 50:
+                    raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5)
+                else:
+                    raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5)
+            else:
+                raw_div = 0.0
+            score_div = WEIGHT_DIV * raw_div
+
+            # ✅ 최종 스코어 계산 (반드시 float 변환)
+            total_score = float(score_RSI + score_MACD + score_BB + score_Ichi + score_div)
+            final_score = round(total_score, 2)
+
+            # NaN 체크 및 변환
+            if pd.isna(final_score) or np.isnan(final_score):
+                final_score = 0.0  # NaN이 있으면 0으로 변환
+
+            # 📌 trend_scores를 딕셔너리로 저장
+            trend_scores[data.index[i].strftime("%Y-%m-%d")] = final_score
+
+        except Exception as e:
+            print(f"Error processing {data.index[i]}: {e}")  # 디버깅 로그
+
+    return trend_scores
+
+
+
+
+@router.get("/{ticker}/divergence_all", response_model=TrendScoreResponse)
+async def analyze_stock_all(ticker: str):
+    try:
+        data = get_stock_data(ticker)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
+    if data.empty:
+        raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
+
+    trend_scores = analyze_all(data)
+
+    return {"ticker": ticker, "trend_scores": trend_scores}

@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import stocks, earnings, options, divergence
+from fastapi.responses import HTMLResponse
+from app.api import stocks, earnings, history, options, divergence
+from app.api.test_divergence import router as test_router  # test_di
 
 app = FastAPI(
     title="Stock API",
@@ -19,9 +21,16 @@ app.add_middleware(
 # Include routers
 app.include_router(stocks.router, prefix="/stocks", tags=["stocks"])
 app.include_router(earnings.router, prefix="/stocks", tags=["earnings"])
+app.include_router(history.router, prefix="/stocks", tags=["history"])
 app.include_router(options.router, prefix="/stocks", tags=["options"])
 app.include_router(divergence.router, prefix="/stocks", tags=["divergence"]) 
+app.include_router(test_router)
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to Stock API"}
+
+@app.get("/test", response_class=HTMLResponse)
+async def read_test():
+    with open("app/templates/test.html", encoding="utf-8") as f:  # test.html 파일 제공
+        return f.read()
