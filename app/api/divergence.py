@@ -7,18 +7,26 @@ from pydantic import BaseModel
 router = APIRouter()
 
 # Individual weights for each indicator (adjust as needed)
-WEIGHT_RSI = 1 #2
+WEIGHT_RSI = 1
 WEIGHT_MACD = 10
 WEIGHT_BB = 10
 WEIGHT_ICHIMOKU = 20
 WEIGHT_DIV = 1
 WEIGHT_VP = 1 #10
-WEIGHT_VOL = 2 #10
-WEIGHT_SMI = 2 #10
+WEIGHT_VOL = 2
+WEIGHT_SMI = 2
 
 # Configurable slope window sizes
 MACD_SLOPE_WINDOW = 5
-SMI_SLOPE_WINDOW = 5
+SMI_SLOPE_WINDOW = 4
+
+#TODO: MACD, SMI 밸류 + slope divergence 모두 적용하여 과매도+추세전환 모두 이용하여 score 계산
+#TODO: eps history로 fair value 계산
+
+# Default setting for trend score normalization
+NORMALIZE_TREND_SCORES = False
+
+STOCK_DATA_PERIOD = '1y' #'3mo'
 
 class TrendScoreResponse(BaseModel):
     ticker: str
@@ -106,9 +114,23 @@ def compute_divergence_series(data):
         divergences.append(div_val)
     return pd.Series(divergences, index=data.index[1:])
 
+def normalize_scores_tanh(trend_scores):
+    scores = np.array(list(trend_scores.values()))
+    
+    mean = scores.mean()
+    std = scores.std()
+
+    if std == 0:
+        normalized_scores = np.zeros_like(scores)
+    else:
+        standardized_scores = (scores - mean) / std
+        normalized_scores = 100 * np.tanh(standardized_scores)
+
+    return dict(zip(trend_scores.keys(), normalized_scores))
+
 def get_stock_data(ticker):
     # Set auto_adjust to False to avoid warning
-    stock_data = yf.download(ticker, period='1y', interval='1d', auto_adjust=False)
+    stock_data = yf.download(ticker, period=STOCK_DATA_PERIOD, interval='1d', auto_adjust=False)
     return stock_data
 
 def analyze(data):
@@ -187,9 +209,9 @@ def analyze(data):
     # 6. Volume Profile: relative difference between current price and vp_peak
     distance = (latest_close - vp_peak) / vp_peak
     if distance > 0:
-        raw_VP = - distance * 100
+        raw_VP = - distance * 10
     elif distance < 0:
-        raw_VP = abs(distance) * 100
+        raw_VP = abs(distance) * 10
     else:
         raw_VP = 0
     score_VP = WEIGHT_VP * raw_VP
@@ -273,7 +295,7 @@ async def analyze_stock(ticker: str):
         "details": analysis_results['details']
     }
 
-def analyze_all(data):
+def analyze_all(data, normalize=NORMALIZE_TREND_SCORES):
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -342,7 +364,7 @@ def analyze_all(data):
             # Volume Profile (vp_peak는 전체 데이터 기준)
             vp_peak, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
             distance = (latest_close - vp_peak) / vp_peak if vp_peak != 0 else 0.0
-            raw_VP = - distance * 100 if distance > 0 else abs(distance) * 100
+            raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
             score_VP = WEIGHT_VP * raw_VP
 
             # Volume Ratio
@@ -382,6 +404,9 @@ def analyze_all(data):
 
         except Exception as e:
             print(f"Error processing {data.index[i]}: {e}")  # 디버깅 로그
+
+    if normalize:
+        trend_scores = normalize_scores_tanh(trend_scores)            
 
     return {
         "close": close_prices,
