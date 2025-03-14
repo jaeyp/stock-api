@@ -7,7 +7,9 @@ import base64
 import matplotlib.dates as mdates  # 날짜 포맷을 위한 모듈
 from ..momentum import analyze_all, get_stock_data  # analyze_all 사용
 
-SIGNAL_THRESHOLD = 100
+DEFAULT_SIGNAL_THRESHOLD = 100
+AGGRESSIVE_BUY_THRESHOLD = 95
+AGGRESSIVE_SELL_THRESHOLD = 105
 
 router = APIRouter()
 
@@ -34,9 +36,13 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         min_close, max_close = close_prices.min(), close_prices.max()
         scaled_close = ((close_prices - min_close) / (max_close - min_close)) * 200 - 100
 
-        # 6. 차이가 SIGNAL_THRESHOLD 이상 나는 지점 찾기
+        # ✅ Aggressive 모드에서 매수·매도 신호 threshold 조정
+        buy_threshold = np.where(mode == "aggressive", AGGRESSIVE_BUY_THRESHOLD, DEFAULT_SIGNAL_THRESHOLD)
+        sell_threshold = np.where(mode == "aggressive", AGGRESSIVE_SELL_THRESHOLD, DEFAULT_SIGNAL_THRESHOLD)
+
+        # 6. 차이가 buy_threshold 또는 sell_threshold 이상 나는 지점 찾기
         diff_values = scaled_close - momentum_strength  # 차이 계산
-        large_diff_mask = np.abs(diff_values) >= SIGNAL_THRESHOLD
+        large_diff_mask = (diff_values >= sell_threshold) | (diff_values <= -buy_threshold)
         large_diff_dates = close_prices.index[large_diff_mask]
         large_diff_values = scaled_close[large_diff_mask]
 
@@ -49,7 +55,7 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         plt.plot(close_prices.index, scaled_close, label="Normalized Close Prices", color="green")  # 변환된 close
         plt.plot(momentum_strength.index, momentum_strength, label="Momentum Strength", color="red", linewidth=1)
 
-        # 9. 차이가 SIGNAL_THRESHOLD 이상인 지점에 마커 표시
+        # 9. 차이가 buy_threshold 또는 sell_threshold 이상인 지점에 마커 표시
         plt.scatter(
             large_diff_dates[is_below], large_diff_values[is_below], 
             color='#3a86ff', marker='o', s=100, label="Sell Signal"
