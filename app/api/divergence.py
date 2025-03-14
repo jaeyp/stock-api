@@ -22,7 +22,7 @@ SMI_SLOPE_WINDOW = 5
 
 class TrendScoreResponse(BaseModel):
     ticker: str
-    trend_scores: dict  # Date -> trend score
+    history: dict  # Date -> trend score
 
 class DivergenceResponse(BaseModel):
     ticker: str
@@ -281,8 +281,9 @@ def analyze_all(data):
     smi, smi_d = calculate_smi(data)
 
     trend_scores = {}
+    close_prices = {}
 
-    for i in range(1, len(data)):  # 날짜별로 trend_score 계산
+    for i in range(1, len(data)):  # 날짜별로 trend_score 및 close 저장
         try:
             # 🎯 NaN 처리 및 단일 숫자로 변환
             latest_close = float(np.nan_to_num(data['Close'].iloc[i], nan=0.0))
@@ -299,12 +300,23 @@ def analyze_all(data):
             previous_close = float(np.nan_to_num(data['Close'].iloc[i - 1], nan=latest_close))
 
             # RSI 신호
-            raw_RSI = float(50 - latest_rsi)  # 🎯 float 변환 추가
+            raw_RSI = float(50 - latest_rsi)
             score_RSI = WEIGHT_RSI * raw_RSI
 
             # MACD 신호
             raw_MACD = float((latest_macd - latest_signal) / latest_close * 100) if latest_close != 0 else 0.0
             score_MACD = WEIGHT_MACD * raw_MACD
+
+            # MACD 기울기 계산
+            if i >= MACD_SLOPE_WINDOW:
+                x = np.arange(MACD_SLOPE_WINDOW)
+                macd_values = data['MACD'].iloc[i - MACD_SLOPE_WINDOW + 1: i + 1].values
+                signal_values = data['Signal'].iloc[i - MACD_SLOPE_WINDOW + 1: i + 1].values
+                macd_slope = float(np.polyfit(x, macd_values, 1)[0])
+                signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+            else:
+                macd_slope = 0.0
+                signal_slope = 0.0
 
             # 볼린저 밴드
             latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
@@ -327,23 +339,54 @@ def analyze_all(data):
                 raw_div = 0.0
             score_div = WEIGHT_DIV * raw_div
 
+            # Volume Profile (vp_peak는 전체 데이터 기준)
+            vp_peak, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
+            distance = (latest_close - vp_peak) / vp_peak if vp_peak != 0 else 0.0
+            raw_VP = - distance * 100 if distance > 0 else abs(distance) * 100
+            score_VP = WEIGHT_VP * raw_VP
+
+            # Volume Ratio
+            avg_volume = np.nanmean(data['Volume'].iloc[max(0, i-19):i+1].mean())
+            volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
+            raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
+            score_Vol = WEIGHT_VOL * raw_Vol
+
+            # SMI 기울기 계산
+            if i >= SMI_SLOPE_WINDOW:
+                x = np.arange(SMI_SLOPE_WINDOW)
+                k_values = smi.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
+                d_values = smi_d.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
+                k_slope = float(np.polyfit(x, k_values, 1)[0])
+                d_slope = float(np.polyfit(x, d_values, 1)[0])
+                slope_diff = k_slope - d_slope
+            else:
+                k_slope = 0.0
+                d_slope = 0.0
+                slope_diff = 0.0
+            score_SMI = WEIGHT_SMI * slope_diff
+
             # ✅ 최종 스코어 계산 (반드시 float 변환)
-            total_score = float(score_RSI + score_MACD + score_BB + score_Ichi + score_div)
+            total_score = float(
+                score_RSI + score_MACD + score_BB + score_Ichi + score_div + score_VP + score_Vol + score_SMI
+            )
             final_score = round(total_score, 2)
 
             # NaN 체크 및 변환
             if pd.isna(final_score) or np.isnan(final_score):
-                final_score = 0.0  # NaN이 있으면 0으로 변환
+                final_score = 0.0
 
-            # 📌 trend_scores를 딕셔너리로 저장
-            trend_scores[data.index[i].strftime("%Y-%m-%d")] = final_score
+            # 📌 trend_scores 저장
+            date_str = data.index[i].strftime("%Y-%m-%d")
+            trend_scores[date_str] = final_score
+            close_prices[date_str] = round(latest_close, 2)
 
         except Exception as e:
             print(f"Error processing {data.index[i]}: {e}")  # 디버깅 로그
 
-    return trend_scores
-
-
+    return {
+        "close": close_prices,
+        "trend_scores": trend_scores
+    }
 
 
 @router.get("/{ticker}/divergence_all", response_model=TrendScoreResponse)
@@ -355,6 +398,6 @@ async def analyze_stock_all(ticker: str):
     if data.empty:
         raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
-    trend_scores = analyze_all(data)
+    history = analyze_all(data)
 
-    return {"ticker": ticker, "trend_scores": trend_scores}
+    return {"ticker": ticker, "history": history}

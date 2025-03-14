@@ -1,57 +1,76 @@
 import json
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 from fastapi import APIRouter, HTTPException
 import io
 import base64
-from app.api.divergence import analyze  # analyze 함수 가져오기
+import matplotlib.dates as mdates  # 날짜 포맷을 위한 모듈
+from app.api.divergence import analyze_all, get_stock_data  # analyze_all 사용
 
 router = APIRouter()
 
-@router.get("/test/divergence")
-async def get_stock_graph():
-    # JSON 파일에서 데이터 로드
+@router.get("/{ticker}/test")
+async def get_stock_graph(ticker: str):
     try:
-        with open('app/data/rdfn_history.json', 'r') as file:
-            data = json.load(file)
-        
-        df = pd.DataFrame(data['history'])
-        df['Date'] = pd.to_datetime(df['Date'])
-        df.set_index('Date', inplace=True)
-        print(df)
-        # trend_score 계산
-        trend_scores = []
-        for index, row in df.iterrows():
-            print(index, row)
-            single_day_df = pd.DataFrame([row])
-            print('single_day_df', '*****', single_day_df) 
-            analysis_result = analyze(single_day_df)
-            print(index, analysis_result)
-            trend_scores.append(float(analysis_result['trend_score']))  # trend_score 추가
+        # 📌 1. Ticker 데이터 가져오기
+        data = get_stock_data(ticker)
+        if data.empty:
+            raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
+        # 📌 2. 분석 실행
+        history = analyze_all(data)
 
-        # 그래프 생성
+        # 📌 3. Close와 Trend Score 데이터 변환
+        close_prices = pd.Series(history["close"])
+        trend_scores = pd.Series(history["trend_scores"])
+
+        # ✅ 📌 4. 날짜 인덱스를 `datetime` 형식으로 변환 (1970-01 방지)
+        close_prices.index = pd.to_datetime(close_prices.index)
+        trend_scores.index = pd.to_datetime(trend_scores.index)
+
+        # 📌 5. Close 값을 -100 ~ 100 범위로 변환 (정규화)
+        min_close, max_close = close_prices.min(), close_prices.max()
+        scaled_close = ((close_prices - min_close) / (max_close - min_close)) * 200 - 100
+
+        # 📌 6. 차이가 100 이상 나는 지점 찾기
+        large_diff_mask = np.abs(scaled_close - trend_scores) >= 100
+        large_diff_dates = close_prices.index[large_diff_mask]
+        large_diff_values = scaled_close[large_diff_mask]
+
+        # 📌 7. 그래프 생성
         plt.figure(figsize=(10, 5))
-        plt.plot(df.index, df['Close'], label='Closing Prices', color='blue')
-        plt.plot(df.index, trend_scores, label='Trend Score', color='red')  # trend_score 그래프 추가
-        plt.title('Stock Closing Prices and Trend Scores Over the Last Year')
-        plt.xlabel('Date')
-        plt.ylabel('Price / Trend Score')
-        plt.xticks(rotation=45)
-        plt.legend()
-        plt.grid()
+        plt.plot(close_prices.index, scaled_close, label="Normalized Close Prices", color="blue")  # 변환된 close
+        plt.plot(trend_scores.index, trend_scores, label="Trend Score", color="red")
 
-        # 그래프를 BytesIO 객체에 저장
+        # ✅ 📌 8. 차이가 100 이상인 지점에 'X' 표시
+        plt.scatter(large_diff_dates, large_diff_values, color='black', marker='x', s=50, label="High Difference")
+
+        # 📌 9. x축 날짜를 "YYYY-MM" 형식으로 변경
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))  # 년-월 포맷 적용
+        plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=2))  # 2개월 간격으로 표시
+
+        # ✅ 10. Y축 20 단위로 고정 (100, 80, 60, ..., -100)
+        plt.yticks(np.arange(-100, 101, 20))  # -100에서 100까지 20 간격
+
+        plt.title(f"{ticker} - Stock Prices & Trend Scores")
+        plt.xlabel("Date")
+        plt.ylabel("Scaled Value (-100 to 100)")
+        plt.legend()
+        plt.grid(True, which="both", linestyle="--", linewidth=0.5)  # 그리드 추가
+
+        # 📌 11. x축 라벨 회전 및 간격 조절
+        plt.xticks(rotation=45, ha="right")  # 45도 회전, 오른쪽 정렬
+        plt.tight_layout()  # 자동 간격 조정
+
+        # 📌 12. 그래프를 Base64로 변환 후 반환
         buf = io.BytesIO()
-        plt.savefig(buf, format='png')
+        plt.savefig(buf, format="png")
         plt.close()
         buf.seek(0)
 
-        # 이미지를 base64로 인코딩
-        image_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        return {"image": f"data:image/png;base64,{image_base64}"}
 
-        return {
-            "image": f"data:image/png;base64,{image_base64}"
-        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating graph: {str(e)}")

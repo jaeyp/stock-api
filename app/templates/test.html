@@ -4,18 +4,71 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stock Graph</title>
+    <style>
+      /* 로딩 스크린 스타일 */
+      #loading {
+        display: none;
+        font-size: 18px;
+        color: gray;
+      }
+      #stock-graph {
+        display: none; /* 초기에는 숨김 */
+        max-width: 100%;
+        height: auto;
+      }
+    </style>
   </head>
   <body>
-    <h1>Stock Closing Prices Graph</h1>
+    <h1>Stock Closing Prices & Trend Scores</h1>
+
+    <!-- 티커 입력 및 버튼 -->
+    <label for="ticker">Enter Stock Ticker:</label>
+    <input type="text" id="ticker" placeholder="e.g., AAPL" />
+    <button onclick="fetchStockGraph()">Get Graph</button>
+
+    <br /><br />
+
+    <!-- 로딩 화면 -->
+    <p id="loading">🔄 Loading... Please wait.</p>
+
+    <!-- 그래프 이미지 -->
     <img id="stock-graph" src="" alt="Stock Graph" />
+
     <script>
-      // API에서 그래프 이미지를 가져오는 함수
-      fetch("/test/divergence")
-        .then((response) => response.json())
-        .then((data) => {
-          document.getElementById("stock-graph").src = data.image; // Base64 이미지를 src에 설정
-        })
-        .catch((error) => console.error("Error fetching graph:", error));
+      function fetchStockGraph() {
+        const ticker = document
+          .getElementById("ticker")
+          .value.trim()
+          .toUpperCase();
+        const graphImg = document.getElementById("stock-graph");
+        const loadingText = document.getElementById("loading");
+
+        if (!ticker) {
+          alert("Please enter a valid stock ticker.");
+          return;
+        }
+
+        // 로딩 화면 표시 & 기존 이미지 숨기기
+        loadingText.style.display = "block";
+        graphImg.style.display = "none";
+
+        fetch(`/${ticker}/test`)
+          .then((response) => response.json())
+          .then((data) => {
+            loadingText.style.display = "none"; // 로딩 화면 제거
+            if (data.image) {
+              graphImg.src = data.image;
+              graphImg.style.display = "block"; // 이미지 표시
+            } else {
+              alert("No image received from API.");
+            }
+          })
+          .catch((error) => {
+            loadingText.style.display = "none"; // 에러 발생 시 로딩 화면 제거
+            console.error("Error fetching graph:", error);
+            alert("Failed to load graph. Please try again.");
+          });
+      }
     </script>
   </body>
 </html>
