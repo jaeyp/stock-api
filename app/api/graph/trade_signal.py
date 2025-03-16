@@ -85,6 +85,13 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
                 fontsize=10, ha='right', va='bottom', color='black')
         plt.text(last_date, last_price, f"{close_prices.iloc[-1]:.2f}", 
                 fontsize=10, ha='left', va='bottom', color='black')
+        
+        # 12-1. 마지막 날짜의 Close - Trend Score 차이(diff) 값도 표시
+        last_date_diff = scaled_close.iloc[-1] - momentum_strength.iloc[-1]
+        last_date_diff_color = 'blue' if last_date_diff > 0 else 'red'
+
+        plt.text(last_date, last_price + 6, f"{abs(last_date_diff):.2f}", 
+                fontsize=10, ha='left', color=last_date_diff_color)
 
         # 13. x축 날짜를 "YYYY-MM" 형식으로 변경
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))  # 년-월 포맷 적용
