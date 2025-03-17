@@ -11,6 +11,6 @@ REM Install packages
 pip install -r requirements.txt
 
 REM Run the FastAPI server
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --log-level debug
 
 pause

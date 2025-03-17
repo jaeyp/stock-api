@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import List
 
 router = APIRouter()
 
@@ -50,10 +51,15 @@ class MomentumResponse(BaseModel):
     ticker: str
     date: str
     current_price: str
+    scaled_price: str
     momentum_strength: str  # Final score in range -100 to 100 (string, 2 decimals)
+    latest_diff: str
     details: dict
 
 def calculate_rsi(data, window=14):
+    if len(data) < window:
+        return pd.Series([np.nan] * len(data), index=data.index)
+    
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
@@ -69,6 +75,9 @@ def calculate_macd(data):
     return macd, signal
 
 def calculate_bollinger_bands(data, window=20):
+    if len(data) < window:
+        return pd.Series([np.nan] * len(data), index=data.index), pd.Series([np.nan] * len(data), index=data.index)
+
     sma = data['Close'].rolling(window=window).mean()
     rstd = data['Close'].rolling(window=window).std()
     upper_band = sma + (rstd * 2)
@@ -142,12 +151,25 @@ def normalize_scores_tanh(momentum_strength):
 
     return dict(zip(momentum_strength.keys(), normalized_scores))
 
+def calculate_final_score(indicators):
+    # NaN이 아닌 score만 valid_scores에 추가
+    valid_scores = [score for raw, score in indicators if not np.isnan(raw)]
+    if valid_scores:
+        return round(sum(valid_scores), 2)
+    else:
+        print("❌ [ERROR] final_score 계산 불가: 모든 지표가 NaN입니다!")
+        return None
+
 def get_stock_data(ticker, period='1y'):
     stock_data = yf.download(ticker, period=period, interval='1d', auto_adjust=False)
     return stock_data
 
+def get_stocks_data(tickers: List[str], period: str = '1y') -> pd.DataFrame:
+    stocks_data = yf.download(tickers, period=period, interval='1d', auto_adjust=False, group_by='ticker')
+    return stocks_data
+
 def analyze(data, mode="conservative"):
-    weights = get_weight_set(mode)  # 매매 스타일에 따라 가중치 설정
+    weights = get_weight_set(mode)  # 
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -157,6 +179,14 @@ def analyze(data, mode="conservative"):
     smi, smi_d = calculate_smi(data)
     div_series = compute_divergence_series(data)
     div_series = pd.to_numeric(div_series, errors='coerce')
+
+    print(f"⚠️ [DEBUG] Mode: {mode}")
+    print(f"⚠️ [DEBUG] Data Shape: {data.shape}")
+    print(f"⚠️ [DEBUG] Data Head:\n{data.head()}")
+    print(f"⚠️ [DEBUG] RSI NaN Count: {data['RSI'].isna().sum()}")
+    print(f"⚠️ [DEBUG] MACD NaN Count: {data['MACD'].isna().sum()}")
+    print(f"⚠️ [DEBUG] BollingerBands NaN Count: {data['Upper Band'].isna().sum()}")
+    print(f"⚠️ [DEBUG] Ichimoku NaN Count: {data['Senkou Span A'].isna().sum()}")
 
     if data['Upper Band'].empty or data['Lower Band'].empty:
         raise HTTPException(status_code=400, detail="Bollinger Bands data is empty.")
@@ -200,45 +230,35 @@ def analyze(data, mode="conservative"):
         signal_slope = 0.0
 
     # 3. Bollinger Bands: deviation of current price from SMA relative to band width
-    latest_SMA = (latest_upper_band + latest_lower_band) / 2
-    band_width = latest_upper_band - latest_lower_band
-    raw_BB = (latest_SMA - latest_close) / band_width if band_width != 0 else 0
+    latest_SMA = float((latest_upper_band + latest_lower_band) / 2) 
+    band_width = float(latest_upper_band - latest_lower_band)
+    raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
     score_BB = weights['BB'] * raw_BB
 
     # 4. Ichimoku: ratio difference between current price and mid value
-    mid_value = (latest_senkou_span_a + latest_senkou_span_b) / 2
-    raw_Ichi = (latest_close - mid_value) / mid_value
+    mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
+    raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
     score_Ichi = weights['ICHIMOKU'] * raw_Ichi
 
     # 5. Divergence: based on RSI and price change
     if latest_close != 0:
         if latest_rsi <= 50:
-            raw_div = (50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5
+            raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5)
         else:
-            raw_div = - (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5
+            raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5)
     else:
         raw_div = 0
     score_div = weights['DIV'] * raw_div
 
     # 6. Volume Profile: relative difference between current price and vp_peak
-    distance = (latest_close - vp_peak) / vp_peak
-    if distance > 0:
-        raw_VP = - distance * 10
-    elif distance < 0:
-        raw_VP = abs(distance) * 10
-    else:
-        raw_VP = 0
+    distance = (latest_close - vp_peak) / vp_peak if vp_peak != 0 else 0.0
+    raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
     score_VP = weights['VP'] * raw_VP
 
     # 7. Volume Ratio: based on ratio of today's volume to 20-day average volume
     avg_volume = np.nanmean(data['Volume'].rolling(window=20).mean().values)
     volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1
-    if latest_close < previous_close:
-        raw_Vol = - (volume_ratio - 1) * 10
-    elif latest_close > previous_close:
-        raw_Vol = (volume_ratio - 1) * 10
-    else:
-        raw_Vol = 0
+    raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
     score_Vol = weights['VOL'] * raw_Vol
 
     # 8. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
@@ -255,8 +275,20 @@ def analyze(data, mode="conservative"):
         slope_diff = 0.0
     score_SMI = weights['SMI'] * slope_diff
 
-    total_score = score_RSI + score_MACD + score_BB + score_Ichi + score_div + score_VP + score_Vol + score_SMI
-    final_score = total_score #100 * np.tanh(total_score / 20)
+    # (raw_value, score) 튜플 리스트 구성
+    indicators_list = [
+        (raw_RSI, score_RSI),
+        (raw_MACD, score_MACD),
+        (raw_BB, score_BB),
+        (raw_Ichi, score_Ichi),
+        (raw_div, score_div),
+        (raw_VP, score_VP),
+        (raw_Vol, score_Vol),
+        (slope_diff, score_SMI)
+    ]
+
+    # ✅ Final Score 계산 시 NaN 제외
+    final_score = calculate_final_score(indicators_list)
 
     details = {
         "RSI": {"raw": round(raw_RSI, 2), "score": round(score_RSI, 2)},
@@ -283,10 +315,17 @@ def analyze(data, mode="conservative"):
         }
     }
 
+    print(data["Close"].min(), data["Close"].max())
+    min_close = float(data["Close"].min().item())
+    max_close = float(data["Close"].max().item())
+    scaled_close = ((latest_close - min_close) / (max_close - min_close)) * 200 - 100   
+
     return {
         "date": latest_date,
         "close": f"{latest_close:.2f}",
+        "scaled_close": f"{scaled_close:.2f}",
         "momentum_strength": f"{final_score:.2f}",
+        "latest_diff": f"{scaled_close - final_score:.2f}",
         "details": details
     }
 
@@ -305,7 +344,9 @@ async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservati
         "ticker": ticker,
         "date": analysis_results['date'],
         "current_price": analysis_results['close'],
+        "scaled_price": analysis_results['scaled_close'],
         "momentum_strength": analysis_results['momentum_strength'],
+        "latest_diff": analysis_results['latest_diff'],
         "details": analysis_results['details']
     }
 
@@ -402,15 +443,20 @@ def analyze_all(data, mode="conservative", normalize=NORMALIZE_MOMENTUM_STRENGTH
                 slope_diff = 0.0
             score_SMI = weights['SMI'] * slope_diff
 
-            # ✅ 최종 스코어 계산 (반드시 float 변환)
-            total_score = float(
-                score_RSI + score_MACD + score_BB + score_Ichi + score_div + score_VP + score_Vol + score_SMI
-            )
-            final_score = round(total_score, 2)
+            # (raw_value, score) 튜플 리스트 구성
+            indicators_list = [
+                (raw_RSI, score_RSI),
+                (raw_MACD, score_MACD),
+                (raw_BB, score_BB),
+                (raw_Ichi, score_Ichi),
+                (raw_div, score_div),
+                (raw_VP, score_VP),
+                (raw_Vol, score_Vol),
+                (slope_diff, score_SMI)
+            ]
 
-            # NaN 체크 및 변환
-            if pd.isna(final_score) or np.isnan(final_score):
-                final_score = 0.0
+            # ✅ Final Score 계산 시 NaN 제외
+            final_score = calculate_final_score(indicators_list)
 
             # 📌 momentum_strength 저장
             date_str = data.index[i].strftime("%Y-%m-%d")
