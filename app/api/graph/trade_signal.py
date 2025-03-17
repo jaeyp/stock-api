@@ -92,6 +92,14 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
 
         plt.text(last_date, last_price + 6, f"{abs(last_date_diff):.2f}", 
                 fontsize=10, ha='left', color=last_date_diff_color)
+        
+        # ✅ 12-2. Trend Score의 시작과 끝 값도 표시
+        first_momentum, last_momentum = momentum_strength.iloc[0], momentum_strength.iloc[-1]
+
+        plt.text(first_date, first_momentum, f"{first_momentum:.2f}", 
+                fontsize=10, ha='right', va='bottom', color='black')  # 빨간색 (Trend Score)
+        plt.text(last_date, last_momentum, f"{last_momentum:.2f}", 
+                fontsize=10, ha='left', va='bottom', color='black')  # 빨간색 (Trend Score)
 
         # 13. x축 날짜를 "YYYY-MM" 형식으로 변경
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))  # 년-월 포맷 적용
@@ -117,6 +125,7 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         buf.seek(0)
 
         image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        
         return {"image": f"data:image/png;base64,{image_base64}"}
 
     except Exception as e:
