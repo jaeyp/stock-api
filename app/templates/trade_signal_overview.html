@@ -26,6 +26,26 @@
         color: #555;
         margin-bottom: 20px;
       }
+      /* Period & Mode 선택 스타일 */
+      #controls {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      #controls label {
+        margin-right: 5px;
+      }
+      #controls select {
+        padding: 6px 10px;
+        font-size: 1em;
+        margin-right: 20px;
+      }
+      /* 로딩 메시지 스타일 */
+      #loading {
+        font-size: 18px;
+        color: gray;
+        text-align: center;
+        margin-bottom: 20px;
+      }
       /* 두 열로 나누기 위한 레이아웃 */
       .columns {
         display: flex;
@@ -103,6 +123,20 @@
     <div class="container">
       <h1>Market Signal Overview</h1>
       <div id="query-timestamp"></div>
+      <!-- Period & Mode 선택 컨트롤 -->
+      <div id="controls">
+        <label for="period">Period:</label>
+        <select id="period">
+          <option value="1y">1 Year</option>
+          <option value="6mo" selected>6 Month</option>
+          <option value="3mo">3 Month</option>
+        </select>
+        <label for="mode">Mode:</label>
+        <select id="mode">
+          <option value="conservative" selected>Conservative</option>
+          <option value="aggressive">Aggressive</option>
+        </select>
+      </div>
       <div id="loading">Loading...</div>
       <div class="columns" id="columns" style="display: none">
         <div class="column" id="buy-column">
@@ -136,108 +170,145 @@
       }
       updateTimestamp();
 
-      // 로딩 메시지를 표시한 후, 데이터 처리 완료 시 숨깁니다.
-      document.getElementById("loading").style.display = "block";
-      // API에서 trade_signals 데이터를 가져와 Buy/Sell 열에 카드 추가
-      fetch("/trade_signals")
-        .then((response) => response.json())
-        .then((data) => {
-          // Buy Recommendations: conservative strength < 0 (음수 또는 0는 왼쪽)
-          // Sell Recommendations: conservative strength > 0 (양수는 오른쪽)
-          const buySignals = data.results.filter(
-            (signal) => parseFloat(signal.strength.conservative) <= 0
-          );
-          const sellSignals = data.results.filter(
-            (signal) => parseFloat(signal.strength.conservative) > 0
-          );
+      // 전역 변수: API 데이터 저장
+      let tradeSignalsData = null;
 
-          // 정렬: Buy는 낮은 값(더 큰 음수)이 위로, Sell은 높은 값이 위로
-          buySignals.sort(
-            (a, b) =>
-              parseFloat(a.strength.conservative) -
-              parseFloat(b.strength.conservative)
-          );
-          sellSignals.sort(
-            (a, b) =>
-              parseFloat(b.strength.conservative) -
-              parseFloat(a.strength.conservative)
-          );
+      // 카드 생성 함수
+      function createCard(signal, selectedField) {
+        const card = document.createElement("div");
+        card.className = "card";
 
-          // 카드 생성 함수
-          function createCard(signal) {
-            const card = document.createElement("div");
-            card.className = "card";
+        const row = document.createElement("div");
+        row.className = "card-row";
 
-            const row = document.createElement("div");
-            row.className = "card-row";
+        // 티커 (큰 폰트)
+        const tickerEl = document.createElement("div");
+        tickerEl.className = "ticker";
+        tickerEl.textContent = signal.ticker;
+        row.appendChild(tickerEl);
 
-            // 티커 (큰 폰트)
-            const tickerEl = document.createElement("div");
-            tickerEl.className = "ticker";
-            tickerEl.textContent = signal.ticker;
-            row.appendChild(tickerEl);
+        // 가격 (작은 폰트)
+        const priceEl = document.createElement("div");
+        priceEl.className = "price";
+        priceEl.textContent = "$" + signal.price;
+        row.appendChild(priceEl);
 
-            // 가격 (작은 폰트)
-            const priceEl = document.createElement("div");
-            priceEl.className = "price";
-            priceEl.textContent = "$" + signal.price;
-            row.appendChild(priceEl);
+        // 선택된 strength (작은 폰트)
+        const strengthEl = document.createElement("div");
+        strengthEl.className = "strength";
+        const strengthValue = parseFloat(signal.strength[selectedField]);
+        strengthEl.textContent = strengthValue.toFixed(2);
+        if (strengthValue < 0) {
+          strengthEl.classList.add("negative");
+        } else if (strengthValue > 0) {
+          strengthEl.classList.add("positive");
+        }
+        row.appendChild(strengthEl);
 
-            // conservative strength (작은 폰트)
-            const strengthEl = document.createElement("div");
-            strengthEl.className = "strength";
-            const consValue = parseFloat(signal.strength.conservative);
-            strengthEl.textContent = consValue.toFixed(2);
-            if (consValue < 0) {
-              strengthEl.classList.add("negative");
-            } else if (consValue > 0) {
-              strengthEl.classList.add("positive");
-            }
-            row.appendChild(strengthEl);
+        card.appendChild(row);
 
-            card.appendChild(row);
+        // extreme 값이면 BUY/SELL 도장 추가 (<= -100 또는 >= 100)
+        let actionText = "";
+        if (strengthValue <= -100) {
+          actionText = "BUY";
+        } else if (strengthValue >= 100) {
+          actionText = "SELL";
+        }
+        if (actionText) {
+          const actionLabel = document.createElement("div");
+          actionLabel.className =
+            "action-label " + (actionText === "BUY" ? "buy" : "sell");
+          actionLabel.textContent = actionText;
+          card.appendChild(actionLabel);
+        }
+        return card;
+      }
 
-            // extreme 값이면 BUY/SELL 도장 추가
-            let actionText = "";
-            if (consValue <= -100) {
-              actionText = "BUY";
-            } else if (consValue >= 100) {
-              actionText = "SELL";
-            }
-            if (actionText) {
-              const actionLabel = document.createElement("div");
-              actionLabel.className =
-                "action-label " + (actionText === "BUY" ? "buy" : "sell");
-              actionLabel.textContent = actionText;
-              card.appendChild(actionLabel);
-            }
-            return card;
-          }
+      // UI 업데이트 함수: 캐시된 데이터를 기반으로 mode에 따른 리스트 업데이트
+      function updateUI(mode) {
+        const selectedField =
+          mode === "conservative" ? "conservative" : "aggressive";
 
-          // Buy 카드 추가
-          const buyContainer = document.getElementById("buy-cards");
-          buySignals.forEach((signal) => {
-            buyContainer.appendChild(createCard(signal));
-          });
+        // Buy List: 선택된 strength 값이 <= 0
+        const buySignals = tradeSignalsData.filter(
+          (signal) => parseFloat(signal.strength[selectedField]) <= 0
+        );
+        // Sell List: 선택된 strength 값이 > 0
+        const sellSignals = tradeSignalsData.filter(
+          (signal) => parseFloat(signal.strength[selectedField]) > 0
+        );
 
-          // Sell 카드 추가
-          const sellContainer = document.getElementById("sell-cards");
-          sellSignals.forEach((signal) => {
-            sellContainer.appendChild(createCard(signal));
-          });
+        // 정렬: Buy는 낮은 값(더 큰 음수)이 위로, Sell은 높은 값이 위로
+        buySignals.sort(
+          (a, b) =>
+            parseFloat(a.strength[selectedField]) -
+            parseFloat(b.strength[selectedField])
+        );
+        sellSignals.sort(
+          (a, b) =>
+            parseFloat(b.strength[selectedField]) -
+            parseFloat(a.strength[selectedField])
+        );
 
-          // 데이터 로딩 완료 후 로딩 메시지 숨김
-          document.getElementById("loading").style.display = "none";
-          document.getElementById("columns").style.display = "flex";
-        })
-        .catch((error) => {
-          console.error("Error fetching trade signals:", error);
-          document.getElementById("buy-cards").textContent =
-            "Failed to load trade signals.";
-          document.getElementById("sell-cards").textContent =
-            "Failed to load trade signals.";
-          document.getElementById("loading").style.display = "none";
+        // 기존 카드 삭제
+        document.getElementById("buy-cards").innerHTML = "";
+        document.getElementById("sell-cards").innerHTML = "";
+
+        // Buy 카드 추가
+        const buyContainer = document.getElementById("buy-cards");
+        buySignals.forEach((signal) => {
+          buyContainer.appendChild(createCard(signal, selectedField));
         });
+
+        // Sell 카드 추가
+        const sellContainer = document.getElementById("sell-cards");
+        sellSignals.forEach((signal) => {
+          sellContainer.appendChild(createCard(signal, selectedField));
+        });
+      }
+
+      // API 호출 함수: period 변경 시 호출하여 데이터 업데이트
+      function fetchData(period) {
+        document.getElementById("loading").style.display = "block";
+        // 재호출 시 열 초기화
+        document.getElementById("columns").style.display = "none";
+        fetch("/trade_signals?period=" + period)
+          .then((response) => response.json())
+          .then((data) => {
+            tradeSignalsData = data.results;
+            // API 호출 시 타임스탬프 갱신
+            updateTimestamp();
+            // 현재 모드에 따른 UI 업데이트
+            const currentMode = document.getElementById("mode").value;
+            updateUI(currentMode);
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("columns").style.display = "flex";
+          })
+          .catch((error) => {
+            console.error("Error fetching trade signals:", error);
+            document.getElementById("buy-cards").textContent =
+              "Failed to load trade signals.";
+            document.getElementById("sell-cards").textContent =
+              "Failed to load trade signals.";
+            document.getElementById("loading").style.display = "none";
+          });
+      }
+
+      // 초기 데이터 호출: 기본 period 값로 호출 (예: "1y")
+      const initialPeriod = document.getElementById("period").value;
+      fetchData(initialPeriod);
+
+      // 모드 변경 시: 캐시된 데이터로 UI 업데이트 (API 재호출 없음)
+      document.getElementById("mode").addEventListener("change", function () {
+        const newMode = this.value;
+        updateUI(newMode);
+      });
+
+      // Period 변경 시: API 재호출
+      document.getElementById("period").addEventListener("change", function () {
+        const newPeriod = this.value;
+        fetchData(newPeriod);
+      });
     </script>
   </body>
 </html>
