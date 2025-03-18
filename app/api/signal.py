@@ -11,7 +11,7 @@ router = APIRouter()
 # Safe default ticker list (modified to copy from default_factory)
 DEFAULT_TICKERS = ["QLD", "SOXL", "LABU", "FSLR", "ENPH", "PLUG", "BE", "STRL", "BWXT", "OKLO", 
                     "TEM", "RXRX", "CRSP", "ZG", "RDFN", "PGY", "UPST", "HOOD", "ZETA", "S", 
-                    "PINS", "U", "LLY", "NVO", "LUNR", "AMZN", "CRM", "UBER"]
+                    "PINS", "U", "LLY", "NVO", "LUNR", "AMZN", "CRM", "UBER", "AAPL", "META", "RGTI", "IONQ"]
 
 class TradeSignalResponse(BaseModel):
     ticker: str

@@ -41,6 +41,19 @@
       .ticker-nabak-button:hover {
         background-color: #ffc300;
       }
+      .ticker-other-button {
+        margin: 4px 8px;
+        padding: 8px 12px;
+        border: none;
+        background-color: #ff780a;
+        color: black;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      .ticker-other-button:hover {
+        background-color: #ff580a;
+      }
       .input-container {
         display: flex;
         align-items: center;
@@ -109,6 +122,7 @@
         "LUNR",
       ];
       const favoriteTickersNabak = ["AMZN", "CRM", "UBER"];
+      const otherTickers = ["AAPL", "META", "RGTI", "IONQ"];
 
       window.onload = function () {
         const tickerContainer = document.getElementById("favorite-tickers");
@@ -126,6 +140,16 @@
           let btn = document.createElement("button");
           btn.innerText = ticker;
           btn.className = "ticker-nabak-button";
+          btn.onclick = function () {
+            document.getElementById("ticker").value = ticker;
+            fetchGraph();
+          };
+          tickerContainer.appendChild(btn);
+        });
+        otherTickers.forEach((ticker) => {
+          let btn = document.createElement("button");
+          btn.innerText = ticker;
+          btn.className = "ticker-other-button";
           btn.onclick = function () {
             document.getElementById("ticker").value = ticker;
             fetchGraph();
