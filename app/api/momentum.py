@@ -8,7 +8,7 @@ from typing import List
 router = APIRouter()
 
 # Individual weights for each indicator (adjust as needed)
-# 공격적/보수적 매매 모드 선택 (default: 보수적)
+# Select aggressive/conservative trading mode (default: conservative)
 def get_weight_set(mode: str):
     if mode == "aggressive":
         return {
@@ -21,7 +21,7 @@ def get_weight_set(mode: str):
             "VOL": 1,
             "SMI": 1,
         }
-    else:  # 기본값: 보수적
+    else:  # Default: conservative
         return {
             "RSI": 1,
             "MACD": 10,
@@ -37,8 +37,8 @@ def get_weight_set(mode: str):
 MACD_SLOPE_WINDOW = 5
 SMI_SLOPE_WINDOW = 4
 
-#TODO: MACD, SMI 밸류 + slope 전환 모두 적용하여 과매도+추세전환 모두 이용하여 score 계산
-#TODO: eps history로 fair value 계산
+# TODO: Apply MACD, SMI values + slope transitions to calculate scores for oversold + trend changes
+# TODO: Calculate fair value using EPS history
 
 # Default settings
 USE_NORMALIZE_MOMENTUM_STRENGTH = False
@@ -162,12 +162,12 @@ def normalize_scores_tanh(momentum_strength):
     return dict(zip(momentum_strength.keys(), normalized_scores))
 
 def calculate_final_score(indicators):
-    # NaN이 아닌 score만 valid_scores에 추가
+    # Add only non-NaN scores to valid_scores
     valid_scores = [score for raw, score in indicators if not np.isnan(raw)]
     if valid_scores:
         return round(sum(valid_scores), 2)
     else:
-        print("❌ [ERROR] final_score 계산 불가: 모든 지표가 NaN입니다!")
+        print("❌ [ERROR] Unable to calculate final_score: All indicators are NaN!")
         return None
 
 def get_stock_data(ticker, period='1y'):
@@ -179,7 +179,7 @@ def get_stocks_data(tickers: List[str], period: str = '1y') -> pd.DataFrame:
     return stocks_data
 
 def analyze(data, mode="conservative"):
-    weights = get_weight_set(mode)  # 
+    weights = get_weight_set(mode)  # Set weights based on trading style
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -195,7 +195,7 @@ def analyze(data, mode="conservative"):
     print(f"⚠️ [DEBUG] Data Head:\n{data.head()}")
     print(f"⚠️ [DEBUG] RSI NaN Count: {data['RSI'].isna().sum()}")
     print(f"⚠️ [DEBUG] MACD NaN Count: {data['MACD'].isna().sum()}")
-    print(f"⚠️ [DEBUG] BollingerBands NaN Count: {data['Upper Band'].isna().sum()}")
+    print(f"⚠️ [DEBUG] Bollinger Bands NaN Count: {data['Upper Band'].isna().sum()}")
     print(f"⚠️ [DEBUG] Ichimoku NaN Count: {data['Senkou Span A'].isna().sum()}")
 
     if data['Upper Band'].empty or data['Lower Band'].empty:
@@ -286,7 +286,7 @@ def analyze(data, mode="conservative"):
         slope_diff = 0.0
     score_SMI = weights['SMI'] * slope_diff
 
-    # (raw_value, score) 튜플 리스트 구성
+    # Create a list of (raw_value, score) tuples
     indicators_list = [
         (raw_RSI, score_RSI),
         (raw_MACD, score_MACD),
@@ -298,7 +298,7 @@ def analyze(data, mode="conservative"):
         (slope_diff, score_SMI)
     ]
 
-    # ✅ Final Score 계산 시 NaN 제외
+    # Exclude NaN when calculating final score
     final_score = calculate_final_score(indicators_list)
 
     details = {
@@ -362,7 +362,7 @@ async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservati
     }
 
 def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
-    weights = get_weight_set(mode)  # 매매 스타일에 따라 가중치 설정
+    weights = get_weight_set(mode)  # Set weights based on trading style
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
@@ -372,9 +372,9 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
     momentum_strength = {}
     close_prices = {}
 
-    for i in range(1, len(data)):  # 날짜별로 momentum_strength 및 close 저장
+    for i in range(1, len(data)):  # Store momentum_strength and close prices by date
         try:
-            # 🎯 NaN 처리 및 단일 숫자로 변환
+            # Handle NaN and convert to single numbers
             latest_close = float(np.nan_to_num(data['Close'].iloc[i], nan=0.0))
             latest_rsi = float(np.nan_to_num(data['RSI'].iloc[i], nan=50.0))
             latest_macd = float(np.nan_to_num(data['MACD'].iloc[i], nan=0.0))
@@ -388,15 +388,15 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
             latest_smi_d = float(np.nan_to_num(smi_d.iloc[i], nan=0.0))
             previous_close = float(np.nan_to_num(data['Close'].iloc[i - 1], nan=latest_close))
 
-            # RSI 신호
+            # RSI signal
             raw_RSI = float(50 - latest_rsi)
             score_RSI = weights['RSI'] * raw_RSI
 
-            # MACD 신호
+            # MACD signal
             raw_MACD = float((latest_macd - latest_signal) / latest_close * 100) if latest_close != 0 else 0.0
             score_MACD = weights['MACD'] * raw_MACD
 
-            # MACD 기울기 계산
+            # Calculate MACD slope
             if i >= MACD_SLOPE_WINDOW:
                 x = np.arange(MACD_SLOPE_WINDOW)
                 macd_values = data['MACD'].iloc[i - MACD_SLOPE_WINDOW + 1: i + 1].values
@@ -407,18 +407,18 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
                 macd_slope = 0.0
                 signal_slope = 0.0
 
-            # 볼린저 밴드
+            # Bollinger Bands
             latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
             band_width = float(latest_upper_band - latest_lower_band)
             raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
             score_BB = weights['BB'] * raw_BB
 
-            # 이치모쿠
+            # Ichimoku
             mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
             raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
             score_Ichi = weights['ICHIMOKU'] * raw_Ichi
 
-            # 다이버전스
+            # Divergence
             if latest_close != 0:
                 if latest_rsi <= 50:
                     raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5)
@@ -428,7 +428,7 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
                 raw_div = 0.0
             score_div = weights['DIV'] * raw_div
 
-            # Volume Profile (vp_peak는 전체 데이터 기준)
+            # Volume Profile (vp_peak is based on the entire dataset)
             vp_peak, vp_median, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
             selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
             distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
@@ -441,7 +441,7 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
             raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
             score_Vol = weights['VOL'] * raw_Vol
 
-            # SMI 기울기 계산
+            # Calculate SMI slope
             if i >= SMI_SLOPE_WINDOW:
                 x = np.arange(SMI_SLOPE_WINDOW)
                 k_values = smi.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
@@ -455,7 +455,7 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
                 slope_diff = 0.0
             score_SMI = weights['SMI'] * slope_diff
 
-            # (raw_value, score) 튜플 리스트 구성
+            # Create a list of (raw_value, score) tuples
             indicators_list = [
                 (raw_RSI, score_RSI),
                 (raw_MACD, score_MACD),
@@ -467,16 +467,16 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
                 (slope_diff, score_SMI)
             ]
 
-            # ✅ Final Score 계산 시 NaN 제외
+            # Exclude NaN when calculating final score
             final_score = calculate_final_score(indicators_list)
 
-            # 📌 momentum_strength 저장
+            # Store momentum_strength
             date_str = data.index[i].strftime("%Y-%m-%d")
             momentum_strength[date_str] = final_score
             close_prices[date_str] = round(latest_close, 2)
 
         except Exception as e:
-            print(f"Error processing {data.index[i]}: {e}")  # 디버깅 로그
+            print(f"Error processing {data.index[i]}: {e}")  # Debug log
 
     if normalize:
         momentum_strength = normalize_scores_tanh(momentum_strength)            

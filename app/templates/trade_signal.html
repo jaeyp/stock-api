@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trade Signal Chart</title>
     <style>
-      /* 로딩 스크린 스타일 */
       #loading {
         display: none;
         font-size: 18px;
@@ -42,7 +41,6 @@
       .ticker-nabak-button:hover {
         background-color: #ffc300;
       }
-      /* ✅ 입력 필드 컨테이너 스타일 */
       .input-container {
         display: flex;
         align-items: center;
@@ -53,7 +51,6 @@
         border: 1px solid #ccc;
         margin-bottom: 12px;
       }
-      /* ✅ 각 입력 필드 스타일 */
       .input-container input,
       .input-container select {
         padding: 6px 10px;
@@ -64,14 +61,12 @@
         font-size: 14px;
         font-weight: bold;
       }
-      /* ✅ 매매 모드 라디오 버튼 스타일 */
       .trade-mode-group {
         display: flex;
         align-items: center;
         gap: 6px;
         font-weight: bold;
       }
-      /* ✅ 버튼 스타일 */
       .input-container button {
         padding: 8px 12px;
         font-size: 14px;
@@ -86,7 +81,6 @@
       }
     </style>
     <script>
-      // 관심있는 Tickers 리스트
       const favoriteTickers = [
         "QLD",
         "SOXL",
@@ -116,7 +110,6 @@
       ];
       const favoriteTickersNabak = ["AMZN", "CRM", "UBER"];
 
-      // 페이지 로드 시 버튼 동적 생성
       window.onload = function () {
         const tickerContainer = document.getElementById("favorite-tickers");
         favoriteTickers.forEach((ticker) => {
@@ -158,7 +151,6 @@
           return;
         }
 
-        // 로딩 화면 표시 & 기존 이미지 숨기기
         loadingText.style.display = "block";
         graphImg.style.display = "none";
 
@@ -180,7 +172,6 @@
   <body>
     <h1>Trade Signal</h1>
 
-    <!-- ✅ 모든 입력 필드를 한 줄로 묶음 -->
     <div class="input-container">
       <div>
         <label for="ticker">Ticker:</label>

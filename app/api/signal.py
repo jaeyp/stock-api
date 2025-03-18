@@ -8,7 +8,7 @@ from app.api.momentum import analyze, get_stock_data, get_stocks_data
 
 router = APIRouter()
 
-# ✅ 안전한 기본 티커 리스트 (default_factory에서 복사하도록 수정)
+# Safe default ticker list (modified to copy from default_factory)
 DEFAULT_TICKERS = ["QLD", "SOXL", "LABU", "FSLR", "ENPH", "PLUG", "BE", "STRL", "BWXT", "OKLO", 
                     "TEM", "RXRX", "CRSP", "ZG", "RDFN", "PGY", "UPST", "HOOD", "ZETA", "S", 
                     "PINS", "U", "LLY", "NVO", "LUNR", "AMZN", "CRM", "UBER"]
@@ -50,11 +50,11 @@ async def get_trade_signals(
     tickers: List[str] = Query(default_factory=lambda: DEFAULT_TICKERS.copy(), description="Comma-separated list of stock tickers"),
     period: str = '6mo'
 ):
-    """ 여러 개의 티커에 대한 트레이드 신호를 반환하는 API """
-    print(f"🛠 Request URL: {request.url}")  # 요청 URL 확인
-    print(f"✅ Received tickers: {tickers}")
+    """ API to return trading signals for multiple tickers """
+    print(f"Request URL: {request.url}")  # Verify request URL
+    print(f"Received tickers: {tickers}")
 
-    # ✅ 만약 클라이언트가 tickers를 빈 리스트([])로 넘긴다면, 기본 tickers 사용
+    # If client sends an empty list ([]), use default tickers
     if not tickers:
         tickers = DEFAULT_TICKERS.copy()
 
@@ -82,7 +82,7 @@ async def get_trade_signals(
                 print(f"⚠️ [WARNING] No data fetched for {ticker}. Skipping...")
                 continue
 
-            # 'Close', 'High', 'Low', 'Volume' 데이터 추출 및 복사
+            # Extract and copy 'Close', 'High', 'Low', 'Volume' data
             data_to_analyze = ticker_data[['Close', 'High', 'Low', 'Volume']].copy()
 
             conservative_results = analyze(data_to_analyze, "conservative")
@@ -101,6 +101,6 @@ async def get_trade_signals(
         except Exception as e:
             print(f"❌ [ERROR] Error processing trade signal for {ticker}: {str(e)}")
 
-    # strength.conservative 값 기준 오름차순 정렬
+    # Sort trade_signal_results by strength.conservative in ascending order
     trade_signal_results.sort(key=lambda x: float(x["strength"]["conservative"]))
     return {"results": trade_signal_results}
