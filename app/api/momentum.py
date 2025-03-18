@@ -40,8 +40,8 @@ SMI_SLOPE_WINDOW = 4
 #TODO: MACD, SMI 밸류 + slope 전환 모두 적용하여 과매도+추세전환 모두 이용하여 score 계산
 #TODO: eps history로 fair value 계산
 
-# Default setting for momentum strength normalization
-NORMALIZE_MOMENTUM_STRENGTH = False
+# Default settings
+USE_NORMALIZE_MOMENTUM_STRENGTH = False
 
 class MomentumStrengthResponse(BaseModel):
     ticker: str
@@ -106,13 +106,23 @@ def calculate_fibonacci_levels(data):
     level3 = max_price - difference * 0.618
     return level1, level2, level3
 
+def weighted_median(values, weights):
+    sorted_indices = np.argsort(values)
+    sorted_values = values[sorted_indices]
+    sorted_weights = weights[sorted_indices]
+    cumulative_weights = np.cumsum(sorted_weights)
+    cutoff = cumulative_weights[-1] / 2.0
+    median_index = np.searchsorted(cumulative_weights, cutoff)
+    return float(sorted_values[median_index])
+
 def calculate_volume_profile(data, bins=20):
     prices = data['Close'].values
     volumes = data['Volume'].values
     hist, bin_edges = np.histogram(prices, bins=bins, weights=volumes)
     max_index = np.argmax(hist)
     vp_peak = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
-    return vp_peak, hist, bin_edges
+    vp_median = weighted_median(prices, volumes)
+    return vp_peak, vp_median, hist, bin_edges
 
 def calculate_smi(data, k_period=5, d_period=3, smoothing=3):
     M = (data['High'] + data['Low']) / 2
@@ -175,7 +185,7 @@ def analyze(data, mode="conservative"):
     data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
     calculate_ichimoku(data)
     fib_levels = calculate_fibonacci_levels(data)
-    vp_peak, vp_hist, vp_bins = calculate_volume_profile(data, bins=20)
+    vp_peak, vp_median, vp_hist, vp_bins = calculate_volume_profile(data, bins=20)
     smi, smi_d = calculate_smi(data)
     div_series = compute_divergence_series(data)
     div_series = pd.to_numeric(div_series, errors='coerce')
@@ -250,8 +260,9 @@ def analyze(data, mode="conservative"):
         raw_div = 0
     score_div = weights['DIV'] * raw_div
 
-    # 6. Volume Profile: relative difference between current price and vp_peak
-    distance = (latest_close - vp_peak) / vp_peak if vp_peak != 0 else 0.0
+    # 6. Volume Profile: relative difference between current price and (vp_peak or vp_median)
+    selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
+    distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
     raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
     score_VP = weights['VP'] * raw_VP
 
@@ -350,7 +361,7 @@ async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservati
         "details": analysis_results['details']
     }
 
-def analyze_all(data, mode="conservative", normalize=NORMALIZE_MOMENTUM_STRENGTH):
+def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
     weights = get_weight_set(mode)  # 매매 스타일에 따라 가중치 설정
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
@@ -418,8 +429,9 @@ def analyze_all(data, mode="conservative", normalize=NORMALIZE_MOMENTUM_STRENGTH
             score_div = weights['DIV'] * raw_div
 
             # Volume Profile (vp_peak는 전체 데이터 기준)
-            vp_peak, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
-            distance = (latest_close - vp_peak) / vp_peak if vp_peak != 0 else 0.0
+            vp_peak, vp_median, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
+            selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
+            distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
             raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
             score_VP = weights['VP'] * raw_VP
 
