@@ -301,57 +301,71 @@ def get_stocks_data2(tickers: List[str], period: str = '1y', reference_date=None
     return stocks_data
 
 def analyze(data, mode="conservative", reference_date=None):
-    # 기존 단일 시점 분석 (현재 시점 전용)
-    weights = get_weight_set(mode)  # Set weights based on trading style
-    data['RSI'] = calculate_rsi(data)
-    data['MACD'], data['Signal'] = calculate_macd(data)
-    data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
-    calculate_ichimoku(data)
-    fib_levels = calculate_fibonacci_levels(data)
-    vp_peak, vp_median, vp_hist, vp_bins = calculate_volume_profile(data, bins=20)
-    smi, smi_d = calculate_smi(data)
-    div_series = compute_divergence_series(data)
-    div_series = pd.to_numeric(div_series, errors='coerce')
-
-    print(f"⚠️ [DEBUG] Mode: {mode}")
-    print(f"⚠️ [DEBUG] Data Shape: {data.shape}")
-    print(f"⚠️ [DEBUG] Data Head:\n{data.head()}")
-    print(f"⚠️ [DEBUG] RSI NaN Count: {data['RSI'].isna().sum()}")
-    print(f"⚠️ [DEBUG] MACD NaN Count: {data['MACD'].isna().sum()}")
-    print(f"⚠️ [DEBUG] Bollinger Bands NaN Count: {data['Upper Band'].isna().sum()}")
-    print(f"⚠️ [DEBUG] Ichimoku NaN Count: {data['Senkou Span A'].isna().sum()}")
-
-    if data['Upper Band'].empty or data['Lower Band'].empty:
-        raise HTTPException(status_code=400, detail="Bollinger Bands data is empty.")
-
-    # Extract latest values using .iloc for single element access
-    latest_rsi = float(data['RSI'].iloc[-1])
-    latest_macd = float(data['MACD'].iloc[-1])
-    latest_signal = float(data['Signal'].iloc[-1])
-    latest_close = float(data['Close'].iloc[-1])
-    latest_upper_band = float(data['Upper Band'].iloc[-1])
-    latest_lower_band = float(data['Lower Band'].iloc[-1])
-    latest_senkou_span_a = float(data['Senkou Span A'].iloc[-1])
-    latest_senkou_span_b = float(data['Senkou Span B'].iloc[-1])
-    latest_volume = float(data['Volume'].iloc[-1])
-    latest_smi = float(smi.iloc[-1])
-    latest_smi_d = float(smi_d.iloc[-1])
+    """
+    Analyzes the stock data for the given reference date.
+    Only uses the data up to and including the reference date.
+    """
+    tz = timezone('Canada/Mountain')
+    weights = get_weight_set(mode)
     
-    if len(data) < 2:
-        raise HTTPException(status_code=400, detail="Not enough data for volume analysis.")
-    previous_close = float(data['Close'].iloc[-2])
-    latest_date = data.index[-1].strftime("%Y-%m-%d")
+    # 기준일 설정: 없으면 현재 시간, 문자열 등은 datetime으로 변환
+    if reference_date is None:
+        reference_date = datetime.now(tz)
+    elif not isinstance(reference_date, datetime):
+        reference_date = pd.to_datetime(reference_date).to_pydatetime()
+        reference_date = reference_date.astimezone(tz)
     
-    # ----- Raw Indicator Signals -----
-    # 1. RSI: deviation from 50
+    # pandas Timestamp로 변환 후 tz 정보를 제거하여 tz-naive로 만듦
+    reference_date = pd.to_datetime(reference_date).tz_localize(None)
+    
+    # data.index도 pandas Timestamp로 변환 후 tz 정보 제거
+    data.index = pd.to_datetime(data.index)
+    if data.index.tz is not None:
+        data.index = data.index.tz_localize(None)
+    
+    # reference_date보다 작거나 같은 모든 날짜를 추출 후 가장 최근 날짜 선택
+    valid_dates = data.index[data.index <= reference_date]
+    if valid_dates.empty:
+        closest_date = data.index[0]
+    else:
+        closest_date = valid_dates.max()
+    
+    # closest_date까지의 데이터를 선택
+    window_data = data.loc[:closest_date]
+    
+    # If there is not enough data in the window, return early
+    if len(window_data) < 2:
+        raise HTTPException(status_code=400, detail="Not enough data for analysis.")
+    
+    # Calculate indicators for the window_data
+    rsi_series = calculate_rsi(window_data)
+    macd_series, signal_series = calculate_macd(window_data)
+    upper_band, lower_band = calculate_bollinger_bands(window_data)
+    window_data_copy = window_data.copy()  # To avoid modifying original data
+    calculate_ichimoku(window_data_copy)
+    smi_series, smi_d_series = calculate_smi(window_data)
+    
+    latest_close = float(np.nan_to_num(window_data['Close'].iloc[-1], nan=0.0))
+    latest_rsi = float(np.nan_to_num(rsi_series.iloc[-1], nan=50.0))
+    latest_macd = float(np.nan_to_num(macd_series.iloc[-1], nan=0.0))
+    latest_signal = float(np.nan_to_num(signal_series.iloc[-1], nan=0.0))
+    latest_upper_band = float(np.nan_to_num(upper_band.iloc[-1], nan=latest_close))
+    latest_lower_band = float(np.nan_to_num(lower_band.iloc[-1], nan=latest_close))
+    latest_senkou_span_a = float(np.nan_to_num(window_data_copy['Senkou Span A'].iloc[-1], nan=latest_close))
+    latest_senkou_span_b = float(np.nan_to_num(window_data_copy['Senkou Span B'].iloc[-1], nan=latest_close))
+    latest_volume = float(np.nan_to_num(window_data['Volume'].iloc[-1], nan=1.0))
+    latest_smi = float(np.nan_to_num(smi_series.iloc[-1], nan=0.0))
+    latest_smi_d = float(np.nan_to_num(smi_d_series.iloc[-1], nan=0.0))
+    previous_close = float(np.nan_to_num(window_data['Close'].iloc[-2], nan=latest_close))
+    
+    # Perform calculations for each indicator using the window data
     raw_RSI = 40 - latest_rsi
     score_RSI = weights['RSI'] * raw_RSI
-    
-    # 2. MACD: using slopes over recent window (with MACD_SLOPE_WINDOW)
-    if len(data) >= MACD_SLOPE_WINDOW:
+
+    if USE_MACD_SLOPE and len(window_data) >= MACD_SLOPE_WINDOW:
         x = np.arange(MACD_SLOPE_WINDOW)
-        macd_values = data['MACD'].iloc[-MACD_SLOPE_WINDOW:].values
-        signal_values = data['Signal'].iloc[-MACD_SLOPE_WINDOW:].values
+        macd_values = macd_series.iloc[-MACD_SLOPE_WINDOW:].values
+        signal_values = signal_series.iloc[-MACD_SLOPE_WINDOW:].values
         macd_slope = float(np.polyfit(x, macd_values, 1)[0])
         signal_slope = float(np.polyfit(x, signal_values, 1)[0])
         slope_diff_macd = macd_slope - signal_slope
@@ -369,11 +383,10 @@ def analyze(data, mode="conservative", reference_date=None):
 
     score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
 
-    # 3. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
-    if len(smi) >= SMI_SLOPE_WINDOW:
+    if len(smi_series) >= SMI_SLOPE_WINDOW:
         x = np.arange(SMI_SLOPE_WINDOW)
-        k_values = smi.iloc[-SMI_SLOPE_WINDOW:].values
-        d_values = smi_d.iloc[-SMI_SLOPE_WINDOW:].values
+        k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
+        d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
         k_slope = float(np.polyfit(x, k_values, 1)[0])
         d_slope = float(np.polyfit(x, d_values, 1)[0])
         slope_diff_smi = k_slope - d_slope
@@ -383,57 +396,51 @@ def analyze(data, mode="conservative", reference_date=None):
             selected_val = max(k_values[-1], d_values[-1])
         else:
             selected_val = d_values[-1]
-        selected_val = float(selected_val);
+        selected_val = float(selected_val)
     else:
         k_slope = 0.0
         d_slope = 0.0
         slope_diff_smi = 0.0
-    score_SMI = weights['SMI'] * (slope_diff_smi - selected_val) / 10
+    score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10
 
-    # 4. Bollinger Bands: deviation of current price from SMA relative to band width
-    latest_SMA = float((latest_upper_band + latest_lower_band) / 2) 
+    latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
     band_width = float(latest_upper_band - latest_lower_band)
     raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
     score_BB = weights['BB'] * raw_BB
 
-    # 5. Ichimoku: ratio difference between current price and mid value
     mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
     raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
     score_Ichi = weights['ICHIMOKU'] * raw_Ichi
 
-    # 6. Divergence: based on RSI and price change
     if latest_close != 0:
         if latest_rsi <= 50:
             raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close))
         else:
             raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close))
     else:
-        raw_div = 0
+        raw_div = 0.0
     score_div = weights['DIV'] * raw_div
 
-    # 7. Volume Profile: relative difference between current price and (vp_peak or vp_median)
+    vp_peak, vp_median, _, _ = calculate_volume_profile(window_data, bins=20)
     selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
     distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
     raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
     score_VP = weights['VP'] * raw_VP
 
-    # 8. Volume Ratio: based on ratio of today's volume to 20-day average volume
-    avg_volume = np.nanmean(data['Volume'].rolling(window=20).mean().values)
-    volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1
+    rolling_volume = window_data['Volume'].rolling(window=20).mean()
+    avg_volume = np.nanmean(rolling_volume.values) if not rolling_volume.dropna().empty else 0.0
+    volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
     raw_Vol = - (volume_ratio - 1) if latest_close < previous_close else (volume_ratio - 1)
     score_Vol = weights['VOL'] * raw_Vol
 
-    # 9. Fibonacci: calculate the relative difference between the latest close and the nearest fibonacci level
+    fib_levels = calculate_fibonacci_levels(window_data)
     if fib_levels:
-        # fib_levels assumed to be a dict with levels as values
         nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
-        raw_FIB = (nearest_fib - latest_close) / nearest_fib * 100  # 퍼센트 차이
+        raw_FIB = (nearest_fib - latest_close) / nearest_fib * 100
     else:
         raw_FIB = 0.0
-        nearest_fib = None
     score_FIB = weights['FIB'] * raw_FIB
 
-    # Create a list of (raw_value, score) tuples
     indicators_list = [
         (raw_RSI, score_RSI),
         (slope_diff_macd, score_MACD),
@@ -481,7 +488,7 @@ def analyze(data, mode="conservative", reference_date=None):
     scaled_close = ((latest_close - min_close) / (max_close - min_close)) * 200 - 100   
 
     return {
-        "date": latest_date,
+        "date": reference_date.strftime("%Y-%m-%d"),
         "close": f"{latest_close:.2f}",
         "scaled_close": f"{scaled_close:.2f}",
         "momentum_strength": f"{final_score:.2f}",
