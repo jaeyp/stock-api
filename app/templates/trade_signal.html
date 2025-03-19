@@ -125,6 +125,7 @@
 
       window.onload = function () {
         const tickerContainer = document.getElementById("favorite-tickers");
+        const otherTickerContainer = document.getElementById("other-tickers");
         favoriteTickers.forEach((ticker) => {
           let btn = document.createElement("button");
           btn.innerText = ticker;
@@ -143,7 +144,7 @@
             document.getElementById("ticker").value = ticker;
             fetchGraph();
           };
-          tickerContainer.appendChild(btn);
+          otherTickerContainer.appendChild(btn);
         });
         otherTickers.forEach((ticker) => {
           let btn = document.createElement("button");
@@ -153,7 +154,7 @@
             document.getElementById("ticker").value = ticker;
             fetchGraph();
           };
-          tickerContainer.appendChild(btn);
+          otherTickerContainer.appendChild(btn);
         });
 
         // Set default reference date to today
@@ -249,6 +250,7 @@
     </div>
 
     <div id="favorite-tickers"></div>
+    <div id="other-tickers"></div>
 
     <br />
     <div id="loading">Loading...</div>
