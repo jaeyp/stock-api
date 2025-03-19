@@ -8,8 +8,8 @@ import matplotlib.dates as mdates
 from datetime import datetime
 from ..momentum import analyze_all, get_stock_data2
 
-CONSERVATIVE_BUY_THRESHOLD = 100
-CONSERVATIVE_SELL_THRESHOLD = 120
+CONSERVATIVE_BUY_THRESHOLD = 110
+CONSERVATIVE_SELL_THRESHOLD = 130
 AGGRESSIVE_BUY_THRESHOLD = 100
 AGGRESSIVE_SELL_THRESHOLD = 110
 

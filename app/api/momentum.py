@@ -17,24 +17,24 @@ def get_weight_set(mode: str):
         return {
             "RSI": 2,
             "MACD": 10,
+            "SMI": 2,
             "BB": 10,
             "ICHIMOKU": 20,
             "DIV": 1,
             "VP": 1,
             "VOL": 2,
-            "SMI": 2,
             "FIB": 0,   # exclude FIB 4,
         }
     else:  # Default: conservative
         return {
             "RSI": 1,
             "MACD":  1,
+            "SMI": 1,
             "BB": 10,
             "ICHIMOKU": 20,
             "DIV": 1,
             "VP": 1,
-            "VOL": 2,
-            "SMI": 2,
+            "VOL": 10,
             "FIB": 0,   # exclude FIB 1,
         }
     
@@ -383,7 +383,7 @@ def analyze(data, mode="conservative", reference_date=None):
 
     score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
 
-    if len(smi_series) >= SMI_SLOPE_WINDOW:
+    """ if len(smi_series) >= SMI_SLOPE_WINDOW:
         x = np.arange(SMI_SLOPE_WINDOW)
         k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
         d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
@@ -401,7 +401,36 @@ def analyze(data, mode="conservative", reference_date=None):
         k_slope = 0.0
         d_slope = 0.0
         slope_diff_smi = 0.0
-    score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10
+    score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10 """
+    if len(smi_series) >= SMI_SLOPE_WINDOW:
+        x = np.arange(SMI_SLOPE_WINDOW)
+        k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
+        d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
+        k_slope = float(np.polyfit(x, k_values, 1)[0])
+        d_slope = float(np.polyfit(x, d_values, 1)[0])
+        
+        k_last = float(k_values[-1])
+        d_last = float(d_values[-1])
+        
+        value_diff_smi = k_last - d_last
+        slope_diff_smi = k_slope - d_slope
+        
+        if k_last > d_last:
+            if k_slope > d_slope:
+                raw_SMI = (value_diff_smi + slope_diff_smi) / 3
+            else:
+                raw_SMI = slope_diff_smi / 2
+        else:
+            if k_slope < d_slope:
+                raw_SMI = (value_diff_smi + slope_diff_smi) / 3
+            else:
+                raw_SMI = slope_diff_smi / 2
+    else:
+        k_slope = 0.0
+        d_slope = 0.0
+        raw_SMI = 0.0
+
+    score_SMI = weights['SMI'] * raw_SMI
 
     latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
     band_width = float(latest_upper_band - latest_lower_band)
@@ -583,7 +612,7 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
             score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
 
             # 3. SMI Signal
-            if len(smi_series) >= SMI_SLOPE_WINDOW:
+            """ if len(smi_series) >= SMI_SLOPE_WINDOW:
                 x = np.arange(SMI_SLOPE_WINDOW)
                 k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
                 d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
@@ -601,7 +630,37 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
                 k_slope = 0.0
                 d_slope = 0.0
                 slope_diff_smi = 0.0
-            score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10
+            score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10 """
+
+            if len(smi_series) >= SMI_SLOPE_WINDOW:
+                x = np.arange(SMI_SLOPE_WINDOW)
+                k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
+                d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
+                k_slope = float(np.polyfit(x, k_values, 1)[0])
+                d_slope = float(np.polyfit(x, d_values, 1)[0])
+                
+                k_last = float(k_values[-1])
+                d_last = float(d_values[-1])
+                
+                value_diff_smi = k_last - d_last
+                slope_diff_smi = k_slope - d_slope
+                
+                if k_last > d_last:
+                    if k_slope > d_slope:
+                        raw_SMI = (value_diff_smi + slope_diff_smi) / 3
+                    else:
+                        raw_SMI = slope_diff_smi / 2
+                else:
+                    if k_slope < d_slope:
+                        raw_SMI = (value_diff_smi + slope_diff_smi) / 3
+                    else:
+                        raw_SMI = slope_diff_smi / 2
+            else:
+                k_slope = 0.0
+                d_slope = 0.0
+                raw_SMI = 0.0
+
+            score_SMI = weights['SMI'] * raw_SMI
 
             # 4. Bollinger Bands
             latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
