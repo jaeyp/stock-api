@@ -71,7 +71,6 @@
         border: 1px solid #ccc;
         border-radius: 4px;
         outline: none;
-        font-size: 14px;
         font-weight: bold;
       }
       .trade-mode-group {
@@ -156,6 +155,10 @@
           };
           tickerContainer.appendChild(btn);
         });
+
+        // Set default reference date to today
+        const today = new Date().toISOString().split("T")[0];
+        document.getElementById("ref-date").value = today;
       };
 
       async function fetchGraph() {
@@ -164,9 +167,12 @@
           .value.trim()
           .toUpperCase();
         const period = document.getElementById("period").value;
-        const mode = document.querySelector(
+        const mode = "conservative";
+        /* const mode = document.querySelector(
           'input[name="trade-mode"]:checked'
-        ).value;
+        ).value; */
+        // Get reference date from date input control
+        const referenceDate = document.getElementById("ref-date").value;
         const loadingText = document.getElementById("loading");
         const graphImg = document.getElementById("stock-graph");
 
@@ -175,11 +181,13 @@
           return;
         }
 
+        // Show loading message and hide image
         loadingText.style.display = "block";
         graphImg.style.display = "none";
 
+        // Pass reference_date as a query parameter after mode
         const response = await fetch(
-          `/${ticker}/chart/trade_signal?period=${period}&mode=${mode}`
+          `/${ticker}/chart/trade_signal?period=${period}&mode=${mode}&reference_date=${referenceDate}`
         );
         const data = await response.json();
         loadingText.style.display = "none";
@@ -211,15 +219,15 @@
       <div>
         <label for="period">Period:</label>
         <select id="period">
-          <option value="2y">2 Year</option>
-          <option value="1y" selected>1 Year</option>
-          <option value="6mo">6 Months</option>
-          <option value="3mo">3 Months</option>
-          <option value="1mo">1 Month</option>
+          <!-- <option value="2y">2 Year</option> -->
+          <option value="1y">1 Year</option>
+          <option value="6mo" selected>6 Months</option>
+          <!-- <option value="3mo">3 Months</option>
+          <option value="1mo">1 Month</option> -->
         </select>
       </div>
 
-      <div class="trade-mode-group">
+      <!-- <div class="trade-mode-group">
         <input
           type="radio"
           id="conservative"
@@ -235,8 +243,8 @@
           value="aggressive"
         />
         <label for="aggressive">Aggressive</label>
-      </div>
-
+      </div> -->
+      <input type="date" id="ref-date" name="ref-date" />
       <button onclick="fetchGraph()">Show</button>
     </div>
 

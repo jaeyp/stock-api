@@ -197,9 +197,11 @@
         card.appendChild(row);
 
         let actionText = "";
-        if (strengthValue <= -100) {
+        const buySignalThreshold = 100;
+        const sellSignalThreshold = 110;
+        if (strengthValue <= -buySignalThreshold) {
           actionText = "BUY";
-        } else if (strengthValue >= 100) {
+        } else if (strengthValue >= sellSignalThreshold) {
           actionText = "SELL";
         }
         if (actionText) {

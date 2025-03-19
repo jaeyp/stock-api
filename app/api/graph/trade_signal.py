@@ -5,19 +5,21 @@ from fastapi import APIRouter, HTTPException
 import io
 import base64
 import matplotlib.dates as mdates
-from ..momentum import analyze_all, get_stock_data
+from datetime import datetime
+from ..momentum import analyze_all, get_stock_data2
 
-DEFAULT_SIGNAL_THRESHOLD = 100
-AGGRESSIVE_BUY_THRESHOLD = 95
-AGGRESSIVE_SELL_THRESHOLD = 105
+CONSERVATIVE_BUY_THRESHOLD = 100
+CONSERVATIVE_SELL_THRESHOLD = 110
+AGGRESSIVE_BUY_THRESHOLD = 100
+AGGRESSIVE_SELL_THRESHOLD = 110
 
 router = APIRouter()
 
 @router.get("/{ticker}/chart/trade_signal")
-async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conservative"):
+async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conservative", reference_date = None): # 2025/03/18 or 2025-03-18
     try:
         # 1. Get ticker data
-        data = get_stock_data(ticker, period)
+        data = get_stock_data2(ticker, period, reference_date)
         if data.empty:
             raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
@@ -37,8 +39,8 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         scaled_close = ((close_prices - min_close) / (max_close - min_close)) * 200 - 100
 
         # In aggressive mode, adjust buy/sell signal thresholds
-        buy_threshold = np.where(mode == "aggressive", AGGRESSIVE_BUY_THRESHOLD, DEFAULT_SIGNAL_THRESHOLD)
-        sell_threshold = np.where(mode == "aggressive", AGGRESSIVE_SELL_THRESHOLD, DEFAULT_SIGNAL_THRESHOLD)
+        buy_threshold = np.where(mode == "aggressive", AGGRESSIVE_BUY_THRESHOLD, CONSERVATIVE_BUY_THRESHOLD)
+        sell_threshold = np.where(mode == "aggressive", AGGRESSIVE_SELL_THRESHOLD, CONSERVATIVE_SELL_THRESHOLD)
 
         # 6. Find points where the difference is greater than buy_threshold or sell_threshold
         diff_values = scaled_close - momentum_strength  # Calculate difference
@@ -56,14 +58,24 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         plt.plot(momentum_strength.index, momentum_strength, label="Momentum Strength", color="red", linewidth=1)
 
         # 9. Place markers on points with difference above threshold (or below threshold)
-        plt.scatter(
+        """ plt.scatter(
             large_diff_dates[is_below], large_diff_values[is_below], 
             color='#3a86ff', marker='o', s=100, label="Sell Signal"
         )  # Circle (blue)
         plt.scatter(
             large_diff_dates[is_above], large_diff_values[is_above], 
             color='orange', marker='D', s=90, label="Buy Signal"
-        )  # Diamond (orange)
+        )  # Diamond (orange) """
+        plt.scatter(
+            large_diff_dates[is_below], large_diff_values[is_below],
+            c=large_diff_values[is_below], cmap='Blues', marker='o', s=100, label="Sell Signal",
+            vmin=60, vmax=100
+        )
+        plt.scatter(
+            large_diff_dates[is_above], large_diff_values[is_above],
+            c=large_diff_values[is_above], cmap='Reds_r', marker='D', s=90, label="Buy Signal",
+            vmin=-100, vmax=-60
+        )
 
         # 10. Display Close Price below each marker (in black)
         texts = [f"{price:.2f}" for price in close_prices[large_diff_mask]]
