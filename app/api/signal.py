@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Dict, List
 #from momentum import analyze, get_stock_data, get_stocks_data
-from app.api.momentum import analyze, get_stock_data, get_stocks_data 
+from app.api.momentum import analyze, get_stock_data2, get_stocks_data2 
 
 router = APIRouter()
 
@@ -25,7 +25,7 @@ class MultiTradeSignalResponse(BaseModel):
 @router.get("/{ticker}/trade_signal", response_model=TradeSignalResponse)
 async def get_trade_signal(ticker: str, period: str = '6mo', mode: str = "conservative"):
     try:
-        data = get_stock_data(ticker, period)
+        data = get_stock_data2(ticker, period)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
     if data.empty:
@@ -61,7 +61,7 @@ async def get_trade_signals(
     trade_signal_results = []
 
     try:
-        stocks_data = get_stocks_data(tickers, period)
+        stocks_data = get_stocks_data2(tickers, period)
     except Exception as e:
         print(f"❌ [ERROR] Error fetching stocks data: {str(e)}")
         return {"results": trade_signal_results}

@@ -19,35 +19,32 @@ def get_weight_set(mode: str):
             "MACD": 10,
             "BB": 10,
             "ICHIMOKU": 20,
-            "DIV": 10,
+            "DIV": 1,
             "VP": 1,
-            "VOL": 1,
-            "SMI": 1,
+            "VOL": 2,
+            "SMI": 2,
             "FIB": 0,   # exclude FIB 4,
         }
     else:  # Default: conservative
         return {
             "RSI": 1,
-            "MACD":  10,
+            "MACD":  1,
             "BB": 10,
             "ICHIMOKU": 20,
             "DIV": 1,
             "VP": 1,
-            "VOL": 1,
+            "VOL": 2,
             "SMI": 2,
-            "FIB": 0,   # exclude FIB 1
+            "FIB": 0,   # exclude FIB 1,
         }
     
 # Configurable slope window sizes
-MACD_SLOPE_WINDOW = 5
-SMI_SLOPE_WINDOW = 4
-
-# TODO: Apply MACD, SMI values + slope transitions to calculate scores for oversold + trend changes
-# TODO: Calculate fair value using EPS history
+MACD_SLOPE_WINDOW = 4
+SMI_SLOPE_WINDOW = 2
 
 # Default settings
 USE_NORMALIZE_MOMENTUM_STRENGTH = False
-USE_MACD_SLOPE = False
+USE_MACD_SLOPE = True
 
 class MomentumStrengthResponse(BaseModel):
     ticker: str
@@ -141,14 +138,39 @@ def calculate_volume_profile(data, bins=20):
     vp_median = weighted_median(prices, volumes)
     return vp_peak, vp_median, hist, bin_edges
 
-def calculate_smi(data, k_period=5, d_period=3, smoothing=3):
-    M = (data['High'] + data['Low']) / 2
-    diff = data['Close'] - M
-    R = data['High'] - data['Low']
-    smooth_diff = diff.ewm(span=smoothing, adjust=False).mean().ewm(span=smoothing, adjust=False).mean()
-    smooth_R = R.ewm(span=smoothing, adjust=False).mean().ewm(span=smoothing, adjust=False).mean()
-    smi = 100 * (smooth_diff / (0.5 * smooth_R)).replace([np.inf, -np.inf], 0)
-    smi_d = smi.rolling(window=d_period).mean()
+def calculate_smi(data, k_period=10, k_smoothing=3, k_double_smoothing=3, d_period=10):
+    # 각 시점에서 최근 k_period 동안의 최고가와 최저가를 계산합니다.
+    highest_high = data['High'].rolling(window=k_period, min_periods=1).max()
+    lowest_low = data['Low'].rolling(window=k_period, min_periods=1).min()
+    
+    # 중앙값 계산
+    median = (highest_high + lowest_low) / 2
+    
+    # 원시 값과 범위 계산
+    raw = data['Close'] - median
+    raw_range = (highest_high - lowest_low) / 2
+    
+    # 첫 번째 지수이동평균 (스무딩)
+    smooth_raw = raw.ewm(span=k_smoothing, adjust=False).mean()
+    smooth_range = raw_range.ewm(span=k_smoothing, adjust=False).mean()
+    
+    # 두 번째 지수이동평균 (이중 스무딩)
+    double_smooth_raw = smooth_raw.ewm(span=k_double_smoothing, adjust=False).mean()
+    double_smooth_range = smooth_range.ewm(span=k_double_smoothing, adjust=False).mean()
+    
+    # 분모가 0인 경우를 방지
+    double_smooth_range = double_smooth_range.replace(0, np.nan)
+    
+    # SMI 계산
+    smi = 100 * (double_smooth_raw / double_smooth_range)
+    
+    # %D는 SMI의 지수이동평균 (d_period)
+    smi_d = smi.ewm(span=d_period, adjust=False).mean()
+    
+    # 결측치는 0으로 채워줍니다.
+    smi = smi.fillna(0)
+    smi_d = smi_d.fillna(0)
+    
     return smi, smi_d
 
 def compute_divergence_series(data):
@@ -206,7 +228,7 @@ def get_stock_data2(ticker, period='1y', reference_date=None):
     tz = timezone('Canada/Mountain')
 
     if reference_date is None:
-        reference_date = datetime.today(tz)
+        reference_date = datetime.now(tz)
     elif not isinstance(reference_date, datetime):
         # Convert string or other formats to datetime
         reference_date = pd.to_datetime(reference_date).to_pydatetime()
@@ -242,7 +264,44 @@ def get_stocks_data(tickers: List[str], period: str = '1y') -> pd.DataFrame:
     stocks_data = yf.download(tickers, period=period, interval='1d', auto_adjust=False, group_by='ticker')
     return stocks_data
 
-def analyze(data, mode="conservative"):
+def get_stocks_data2(tickers: List[str], period: str = '1y', reference_date=None) -> pd.DataFrame:
+    tz = timezone('Canada/Mountain')
+
+    if reference_date is None:
+        reference_date = datetime.now(tz)
+    elif not isinstance(reference_date, datetime):
+        # Convert string or other formats to datetime
+        reference_date = pd.to_datetime(reference_date).to_pydatetime()
+        reference_date = reference_date.astimezone(tz)
+
+    period = period.lower().strip()
+    if period.endswith('y'):
+        years = int(period[:-1])
+        start_date = reference_date - relativedelta(years=years)
+    elif period.endswith('mo'):
+        months = int(period[:-2])
+        start_date = reference_date - relativedelta(months=months)
+    elif period.endswith('d'):
+        days = int(period[:-1])
+        start_date = reference_date - timedelta(days=days)
+    else:
+        raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
+
+    start = start_date.strftime("%Y-%m-%d")
+    end = (reference_date + timedelta(days=1)).strftime("%Y-%m-%d") # Set the end date to the day after the reference_date
+
+    stocks_data = yf.download(
+        tickers,
+        start=start,
+        end=end,
+        interval='1d',
+        auto_adjust=False,
+        group_by='ticker'
+    )
+    return stocks_data
+
+def analyze(data, mode="conservative", reference_date=None):
+    # 기존 단일 시점 분석 (현재 시점 전용)
     weights = get_weight_set(mode)  # Set weights based on trading style
     data['RSI'] = calculate_rsi(data)
     data['MACD'], data['Signal'] = calculate_macd(data)
@@ -285,75 +344,84 @@ def analyze(data, mode="conservative"):
     
     # ----- Raw Indicator Signals -----
     # 1. RSI: deviation from 50
-    raw_RSI = 50 - latest_rsi
+    raw_RSI = 40 - latest_rsi
     score_RSI = weights['RSI'] * raw_RSI
     
-    # 2. MACD: calculate percentage difference between MACD and Signal and include slope difference
-    raw_MACD_diff = (latest_macd - latest_signal) / latest_close * 100
-
-    if USE_MACD_SLOPE and len(data) >= MACD_SLOPE_WINDOW:
+    # 2. MACD: using slopes over recent window (with MACD_SLOPE_WINDOW)
+    if len(data) >= MACD_SLOPE_WINDOW:
         x = np.arange(MACD_SLOPE_WINDOW)
         macd_values = data['MACD'].iloc[-MACD_SLOPE_WINDOW:].values
         signal_values = data['Signal'].iloc[-MACD_SLOPE_WINDOW:].values
         macd_slope = float(np.polyfit(x, macd_values, 1)[0])
         signal_slope = float(np.polyfit(x, signal_values, 1)[0])
-        slope_diff = macd_slope - signal_slope
-    else:
-        slope_diff = 0.0
+        slope_diff_macd = macd_slope - signal_slope
 
-    # Define a factor to control the influence of the slope difference (tune via backtesting)
-    slope_factor = 10  
-
-    # Combine the difference and the slope difference
-    raw_MACD = raw_MACD_diff + slope_factor * slope_diff
-    score_MACD = weights['MACD'] * raw_MACD
-
-    # 3. Bollinger Bands: deviation of current price from SMA relative to band width
-    latest_SMA = float((latest_upper_band + latest_lower_band) / 2) 
-    band_width = float(latest_upper_band - latest_lower_band)
-    raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
-    score_BB = weights['BB'] * raw_BB
-
-    # 4. Ichimoku: ratio difference between current price and mid value
-    mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
-    raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
-    score_Ichi = weights['ICHIMOKU'] * raw_Ichi
-
-    # 5. Divergence: based on RSI and price change
-    if latest_close != 0:
-        if latest_rsi <= 50:
-            raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5)
+        if macd_values[-1] < 0 and signal_values[-1] < 0:
+            selected_val = min(macd_values[-1], signal_values[-1])
+        elif macd_values[-1] > 0 and signal_values[-1] > 0:
+            selected_val = max(macd_values[-1], signal_values[-1])
         else:
-            raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5)
+            selected_val = signal_values[-1]
+        selected_val = float(selected_val)
     else:
-        raw_div = 0
-    score_div = weights['DIV'] * raw_div
+        slope_diff_macd = 0.0
+        selected_val = 0.0
 
-    # 6. Volume Profile: relative difference between current price and (vp_peak or vp_median)
-    selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
-    distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
-    raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
-    score_VP = weights['VP'] * raw_VP
+    score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
 
-    # 7. Volume Ratio: based on ratio of today's volume to 20-day average volume
-    avg_volume = np.nanmean(data['Volume'].rolling(window=20).mean().values)
-    volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1
-    raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
-    score_Vol = weights['VOL'] * raw_Vol
-
-    # 8. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
+    # 3. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
     if len(smi) >= SMI_SLOPE_WINDOW:
         x = np.arange(SMI_SLOPE_WINDOW)
         k_values = smi.iloc[-SMI_SLOPE_WINDOW:].values
         d_values = smi_d.iloc[-SMI_SLOPE_WINDOW:].values
         k_slope = float(np.polyfit(x, k_values, 1)[0])
         d_slope = float(np.polyfit(x, d_values, 1)[0])
-        slope_diff = k_slope - d_slope
+        slope_diff_smi = k_slope - d_slope
+        if k_values[-1] < 0 and d_values[-1] < 0:
+            selected_val = min(k_values[-1], d_values[-1])
+        elif k_values[-1] > 0 and d_values[-1] > 0:
+            selected_val = max(k_values[-1], d_values[-1])
+        else:
+            selected_val = d_values[-1]
+        selected_val = float(selected_val);
     else:
         k_slope = 0.0
         d_slope = 0.0
-        slope_diff = 0.0
-    score_SMI = weights['SMI'] * slope_diff
+        slope_diff_smi = 0.0
+    score_SMI = weights['SMI'] * (slope_diff_smi - selected_val) / 10
+
+    # 4. Bollinger Bands: deviation of current price from SMA relative to band width
+    latest_SMA = float((latest_upper_band + latest_lower_band) / 2) 
+    band_width = float(latest_upper_band - latest_lower_band)
+    raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
+    score_BB = weights['BB'] * raw_BB
+
+    # 5. Ichimoku: ratio difference between current price and mid value
+    mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
+    raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
+    score_Ichi = weights['ICHIMOKU'] * raw_Ichi
+
+    # 6. Divergence: based on RSI and price change
+    if latest_close != 0:
+        if latest_rsi <= 50:
+            raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close))
+        else:
+            raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close))
+    else:
+        raw_div = 0
+    score_div = weights['DIV'] * raw_div
+
+    # 7. Volume Profile: relative difference between current price and (vp_peak or vp_median)
+    selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
+    distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
+    raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
+    score_VP = weights['VP'] * raw_VP
+
+    # 8. Volume Ratio: based on ratio of today's volume to 20-day average volume
+    avg_volume = np.nanmean(data['Volume'].rolling(window=20).mean().values)
+    volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1
+    raw_Vol = - (volume_ratio - 1) if latest_close < previous_close else (volume_ratio - 1)
+    score_Vol = weights['VOL'] * raw_Vol
 
     # 9. Fibonacci: calculate the relative difference between the latest close and the nearest fibonacci level
     if fib_levels:
@@ -368,13 +436,13 @@ def analyze(data, mode="conservative"):
     # Create a list of (raw_value, score) tuples
     indicators_list = [
         (raw_RSI, score_RSI),
-        (raw_MACD, score_MACD),
+        (slope_diff_macd, score_MACD),
         (raw_BB, score_BB),
         (raw_Ichi, score_Ichi),
         (raw_div, score_div),
         (raw_VP, score_VP),
         (raw_Vol, score_Vol),
-        (slope_diff, score_SMI),
+        (slope_diff_smi, score_SMI),
         (raw_FIB, score_FIB)
     ]
 
@@ -384,7 +452,7 @@ def analyze(data, mode="conservative"):
     details = {
         "RSI": {"raw": round(raw_RSI, 2), "score": round(score_RSI, 2)},
         "MACD": {
-            "raw": round(raw_MACD, 2),
+            "raw": round(slope_diff_macd, 2),
             "score": round(score_MACD, 2),
             "macd": round(latest_macd, 2),
             "signal": round(latest_signal, 2),
@@ -397,7 +465,7 @@ def analyze(data, mode="conservative"):
         "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
         "VolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
         "SMI": {
-            "raw": round(slope_diff, 2),
+            "raw": round(slope_diff_smi, 2),
             "score": round(score_SMI, 2),
             "K": round(latest_smi, 2),
             "D": round(latest_smi_d, 2),
@@ -421,6 +489,188 @@ def analyze(data, mode="conservative"):
         "details": details
     }
 
+def parse_period_to_relativedelta(period_str: str):
+    """
+    Converts a period string (e.g., '6mo', '1y', '30d') into a relativedelta (or timedelta).
+    """
+    period_str = period_str.lower().strip()
+    if period_str.endswith('y'):
+        years = int(period_str[:-1])
+        return relativedelta(years=years)
+    elif period_str.endswith('mo'):
+        months = int(period_str[:-2])
+        return relativedelta(months=months)
+    elif period_str.endswith('d'):
+        days = int(period_str[:-1])
+        return timedelta(days=days)
+    else:
+        raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
+
+def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
+    """
+    각 날짜별로, 해당 날짜를 기준으로 analysis_period (예: '6mo') 기간 내의 데이터만 사용하여 momentum strength를 계산합니다.
+    """
+    weights = get_weight_set(mode)
+    # 미리 전체 데이터에 대해 일부 지표를 계산해두는 대신, 각 날짜별로 window_data를 추출하여 계산합니다.
+    momentum_strength = {}
+    close_prices = {}
+    
+    period_delta = parse_period_to_relativedelta(analysis_period)
+    
+    # 전체 데이터는 이미 yfinance에서 가져온 데이터여야 하며, analysis_period*2 이상의 기간을 포함해야 합니다.
+    for i in range(1, len(data)):
+        try:
+            current_date = data.index[i]
+            window_start = current_date - period_delta
+            window_data = data[(data.index >= window_start) & (data.index <= current_date)]
+            if len(window_data) < 2:
+                # 충분한 데이터가 없으면 건너뜁니다.
+                continue
+
+            # 각 지표별로 window_data에서 재계산
+            rsi_series = calculate_rsi(window_data)
+            macd_series, signal_series = calculate_macd(window_data)
+            upper_band, lower_band = calculate_bollinger_bands(window_data)
+            # Ichimoku는 별도 복사본에 계산 (원본 data 변형 방지)
+            window_data_copy = window_data.copy()
+            calculate_ichimoku(window_data_copy)
+            smi_series, smi_d_series = calculate_smi(window_data)
+            
+            latest_close = float(np.nan_to_num(window_data['Close'].iloc[-1], nan=0.0))
+            latest_rsi = float(np.nan_to_num(rsi_series.iloc[-1], nan=50.0))
+            latest_macd = float(np.nan_to_num(macd_series.iloc[-1], nan=0.0))
+            latest_signal = float(np.nan_to_num(signal_series.iloc[-1], nan=0.0))
+            latest_upper_band = float(np.nan_to_num(upper_band.iloc[-1], nan=latest_close))
+            latest_lower_band = float(np.nan_to_num(lower_band.iloc[-1], nan=latest_close))
+            latest_senkou_span_a = float(np.nan_to_num(window_data_copy['Senkou Span A'].iloc[-1], nan=latest_close))
+            latest_senkou_span_b = float(np.nan_to_num(window_data_copy['Senkou Span B'].iloc[-1], nan=latest_close))
+            latest_volume = float(np.nan_to_num(window_data['Volume'].iloc[-1], nan=1.0))
+            latest_smi = float(np.nan_to_num(smi_series.iloc[-1], nan=0.0))
+            latest_smi_d = float(np.nan_to_num(smi_d_series.iloc[-1], nan=0.0))
+            previous_close = float(np.nan_to_num(window_data['Close'].iloc[-2], nan=latest_close))
+            
+            # 1. RSI signal
+            raw_RSI = 40 - latest_rsi
+            score_RSI = weights['RSI'] * raw_RSI
+
+            # 2. MACD
+            if USE_MACD_SLOPE and len(window_data) >= MACD_SLOPE_WINDOW:
+                x = np.arange(MACD_SLOPE_WINDOW)
+                macd_values = macd_series.iloc[-MACD_SLOPE_WINDOW:].values
+                signal_values = signal_series.iloc[-MACD_SLOPE_WINDOW:].values
+                macd_slope = float(np.polyfit(x, macd_values, 1)[0])
+                signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+                slope_diff_macd = macd_slope - signal_slope
+
+                if macd_values[-1] < 0 and signal_values[-1] < 0:
+                    selected_val = min(macd_values[-1], signal_values[-1])
+                elif macd_values[-1] > 0 and signal_values[-1] > 0:
+                    selected_val = max(macd_values[-1], signal_values[-1])
+                else:
+                    selected_val = signal_values[-1]
+                selected_val = float(selected_val)
+            else:
+                slope_diff_macd = 0.0
+                selected_val = 0.0
+
+            score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
+
+            # 3. SMI Signal
+            if len(smi_series) >= SMI_SLOPE_WINDOW:
+                x = np.arange(SMI_SLOPE_WINDOW)
+                k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
+                d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
+                k_slope = float(np.polyfit(x, k_values, 1)[0])
+                d_slope = float(np.polyfit(x, d_values, 1)[0])
+                slope_diff_smi = k_slope - d_slope
+                if k_values[-1] < 0 and d_values[-1] < 0:
+                    selected_val = min(k_values[-1], d_values[-1])
+                elif k_values[-1] > 0 and d_values[-1] > 0:
+                    selected_val = max(k_values[-1], d_values[-1])
+                else:
+                    selected_val = d_values[-1]
+                selected_val = float(selected_val);
+            else:
+                k_slope = 0.0
+                d_slope = 0.0
+                slope_diff_smi = 0.0
+            score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10
+
+            # 4. Bollinger Bands
+            latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
+            band_width = float(latest_upper_band - latest_lower_band)
+            raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
+            score_BB = weights['BB'] * raw_BB
+
+            # 5. Ichimoku
+            mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
+            raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
+            score_Ichi = weights['ICHIMOKU'] * raw_Ichi
+
+            # 6. Divergence
+            if latest_close != 0:
+                if latest_rsi <= 50:
+                    raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close))
+                else:
+                    raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close))
+            else:
+                raw_div = 0.0
+            score_div = weights['DIV'] * raw_div
+
+            # 7. Volume Profile (계산은 window_data 내에서 수행)
+            vp_peak, vp_median, _, _ = calculate_volume_profile(window_data, bins=20)
+            selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
+            distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
+            raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
+            score_VP = weights['VP'] * raw_VP
+
+            # 8. Volume Ratio
+            rolling_volume = window_data['Volume'].rolling(window=20).mean()
+            if rolling_volume.dropna().empty:
+                avg_volume = 0.0  # 또는 적절한 기본값 (예: window_data['Volume'].mean())
+            else:
+                avg_volume = np.nanmean(rolling_volume.values)
+            volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
+            raw_Vol = - (volume_ratio - 1) if latest_close < previous_close else (volume_ratio - 1)
+            score_Vol = weights['VOL'] * raw_Vol
+
+            # 9. Fibonacci: window_data를 사용하여 계산
+            fib_levels = calculate_fibonacci_levels(window_data)
+            if fib_levels:
+                nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
+                raw_FIB = (nearest_fib - latest_close) / nearest_fib * 100
+            else:
+                raw_FIB = 0.0
+            score_FIB = weights['FIB'] * raw_FIB
+
+            indicators_list = [
+                (raw_RSI, score_RSI),
+                (slope_diff_macd, score_MACD),
+                (raw_BB, score_BB),
+                (raw_Ichi, score_Ichi),
+                (raw_div, score_div),
+                (raw_VP, score_VP),
+                (raw_Vol, score_Vol),
+                (slope_diff_smi, score_SMI),
+                (raw_FIB, score_FIB)
+            ]
+            final_score = calculate_final_score(indicators_list)
+            date_str = current_date.strftime("%Y-%m-%d")
+            momentum_strength[date_str] = final_score
+            close_prices[date_str] = round(latest_close, 2)
+
+        except Exception as e:
+            print(f"Error processing {current_date}: {e}")
+
+    if normalize:
+        momentum_strength = normalize_scores_tanh(momentum_strength)            
+
+    return {
+        "close": close_prices,
+        "momentum_strength": momentum_strength
+    }
+
+
 @router.get("/{ticker}/momentum", response_model=MomentumResponse)
 async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservative", reference_date=None):
     try:
@@ -430,7 +680,7 @@ async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservati
     if data.empty:
         raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
-    analysis_results = analyze(data, mode)
+    analysis_results = analyze(data, mode, reference_date)
 
     return {
         "ticker": ticker,
@@ -442,154 +692,42 @@ async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservati
         "details": analysis_results['details']
     }
 
-def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
-    weights = get_weight_set(mode)  # Set weights based on trading style
-    data['RSI'] = calculate_rsi(data)
-    data['MACD'], data['Signal'] = calculate_macd(data)
-    data['Upper Band'], data['Lower Band'] = calculate_bollinger_bands(data)
-    calculate_ichimoku(data)
-    smi, smi_d = calculate_smi(data)
-
-    momentum_strength = {}
-    close_prices = {}
-
-    for i in range(1, len(data)):  # Store momentum_strength and close prices by date
-        try:
-            # Handle NaN and convert to single numbers
-            latest_close = float(np.nan_to_num(data['Close'].iloc[i], nan=0.0))
-            latest_rsi = float(np.nan_to_num(data['RSI'].iloc[i], nan=50.0))
-            latest_macd = float(np.nan_to_num(data['MACD'].iloc[i], nan=0.0))
-            latest_signal = float(np.nan_to_num(data['Signal'].iloc[i], nan=0.0))
-            latest_upper_band = float(np.nan_to_num(data['Upper Band'].iloc[i], nan=latest_close))
-            latest_lower_band = float(np.nan_to_num(data['Lower Band'].iloc[i], nan=latest_close))
-            latest_senkou_span_a = float(np.nan_to_num(data['Senkou Span A'].iloc[i], nan=latest_close))
-            latest_senkou_span_b = float(np.nan_to_num(data['Senkou Span B'].iloc[i], nan=latest_close))
-            latest_volume = float(np.nan_to_num(data['Volume'].iloc[i], nan=1.0))
-            latest_smi = float(np.nan_to_num(smi.iloc[i], nan=0.0))
-            latest_smi_d = float(np.nan_to_num(smi_d.iloc[i], nan=0.0))
-            previous_close = float(np.nan_to_num(data['Close'].iloc[i - 1], nan=latest_close))
-
-            # 1. RSI signal
-            raw_RSI = float(50 - latest_rsi)
-            score_RSI = weights['RSI'] * raw_RSI
-            
-            # 2. MACD: calculate percentage difference between MACD and Signal and include slope difference
-            raw_MACD_diff = (latest_macd - latest_signal) / latest_close * 100
-
-            if USE_MACD_SLOPE and len(data) >= MACD_SLOPE_WINDOW:
-                x = np.arange(MACD_SLOPE_WINDOW)
-                macd_values = data['MACD'].iloc[-MACD_SLOPE_WINDOW:].values
-                signal_values = data['Signal'].iloc[-MACD_SLOPE_WINDOW:].values
-                macd_slope = float(np.polyfit(x, macd_values, 1)[0])
-                signal_slope = float(np.polyfit(x, signal_values, 1)[0])
-                slope_diff_macd = macd_slope - signal_slope
-            else:
-                slope_diff_macd = 0.0
-
-            slope_factor = 10  # Factor to control the influence of slope difference
-            raw_MACD = raw_MACD_diff + slope_factor * slope_diff_macd
-            score_MACD = weights['MACD'] * raw_MACD
-
-            # 3. Bollinger Bands
-            latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
-            band_width = float(latest_upper_band - latest_lower_band)
-            raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
-            score_BB = weights['BB'] * raw_BB
-
-            # 4. Ichimoku
-            mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
-            raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
-            score_Ichi = weights['ICHIMOKU'] * raw_Ichi
-
-            # 5. Divergence
-            if latest_close != 0:
-                if latest_rsi <= 50:
-                    raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5)
-                else:
-                    raw_div = float(- (latest_rsi - 50) * ((latest_close - previous_close) / latest_close) * 5)
-            else:
-                raw_div = 0.0
-            score_div = weights['DIV'] * raw_div
-
-            # 6. Volume Profile (vp_peak is based on the entire dataset up to the current index)
-            vp_peak, vp_median, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
-            selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
-            distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
-            raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
-            score_VP = weights['VP'] * raw_VP
-
-            # 7. Volume Ratio
-            avg_volume = np.nanmean(data['Volume'].iloc[max(0, i-19):i+1].mean())
-            volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
-            raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
-            score_Vol = weights['VOL'] * raw_Vol
-
-            # 8. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
-            if i >= SMI_SLOPE_WINDOW:
-                x = np.arange(SMI_SLOPE_WINDOW)
-                k_values = smi.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
-                d_values = smi_d.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
-                k_slope = float(np.polyfit(x, k_values, 1)[0])
-                d_slope = float(np.polyfit(x, d_values, 1)[0])
-                slope_diff_smi = k_slope - d_slope
-            else:
-                k_slope = 0.0
-                d_slope = 0.0
-                slope_diff_smi = 0.0
-            score_SMI = weights['SMI'] * slope_diff_smi
-
-            # 9. Fibonacci: calculate the relative difference between the nearest fibonacci level and the latest close (reversed sign)
-            # Use data up to the current index for calculating Fibonacci levels
-            fib_levels = calculate_fibonacci_levels(data.iloc[:i+1])
-            if fib_levels:
-                nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
-                raw_FIB = (nearest_fib - latest_close) / nearest_fib * 100  # 부호 반대로 적용
-            else:
-                raw_FIB = 0.0
-                nearest_fib = None
-            score_FIB = weights['FIB'] * raw_FIB
-
-            # Create a list of (raw_value, score) tuples for all indicators
-            indicators_list = [
-                (raw_RSI, score_RSI),
-                (raw_MACD, score_MACD),
-                (raw_BB, score_BB),
-                (raw_Ichi, score_Ichi),
-                (raw_div, score_div),
-                (raw_VP, score_VP),
-                (raw_Vol, score_Vol),
-                (slope_diff_smi, score_SMI),
-                (raw_FIB, score_FIB)
-            ]
-
-            # Exclude NaN when calculating final score
-            final_score = calculate_final_score(indicators_list)
-
-            # Store momentum_strength and close price by date
-            date_str = data.index[i].strftime("%Y-%m-%d")
-            momentum_strength[date_str] = final_score
-            close_prices[date_str] = round(latest_close, 2)
-
-        except Exception as e:
-            print(f"Error processing {data.index[i]}: {e}")  # Debug log
-
-    if normalize:
-        momentum_strength = normalize_scores_tanh(momentum_strength)            
-
-    return {
-        "close": close_prices,
-        "momentum_strength": momentum_strength
-    }
+def double_period(period: str) -> str:
+    """
+    주어진 period 문자열을 두 배로 확장합니다.
+    예: "1y" -> "2y", "6mo" -> "1y", "3mo" -> "6mo"
+    """
+    period = period.lower().strip()
+    if period.endswith('y'):
+        num = int(period[:-1])
+        return f"{num * 2}y"
+    elif period.endswith('mo'):
+        num = int(period[:-2])
+        doubled = num * 2
+        # 만약 12개월이면 1y로 변환
+        if doubled % 12 == 0:
+            years = doubled // 12
+            return f"{years}y"
+        else:
+            return f"{doubled}mo"
+    elif period.endswith('d'):
+        num = int(period[:-1])
+        return f"{num * 2}d"
+    else:
+        raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
 
 @router.get("/{ticker}/momentum_all", response_model=MomentumStrengthResponse)
 async def analyze_stock_all(ticker: str, period: str = '1y', mode: str = "conservative"):
     try:
-        data = get_stock_data(ticker, period)
+        # 분석에 필요한 올바른 과거 데이터를 위해 period의 두 배 기간의 데이터를 다운로드합니다.
+        extended_period = double_period(period)
+        data = get_stock_data2(ticker, period=extended_period)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
     if data.empty:
         raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
-    history = analyze_all(data, mode)
+    # 분석 시각마다 analysis_period(예: '6mo') 동안의 데이터만 사용하여 계산합니다.
+    history = analyze_all(data, mode, analysis_period=period)
 
     return {"ticker": ticker, "history": history}
