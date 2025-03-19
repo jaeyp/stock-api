@@ -4,6 +4,9 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
+from pytz import timezone
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 router = APIRouter()
 
@@ -16,21 +19,23 @@ def get_weight_set(mode: str):
             "MACD": 10,
             "BB": 10,
             "ICHIMOKU": 20,
-            "DIV": 1,
+            "DIV": 10,
             "VP": 1,
             "VOL": 1,
             "SMI": 1,
+            "FIB": 0,   # exclude FIB 4,
         }
     else:  # Default: conservative
         return {
             "RSI": 1,
-            "MACD": 10,
+            "MACD":  10,
             "BB": 10,
             "ICHIMOKU": 20,
             "DIV": 1,
             "VP": 1,
             "VOL": 1,
             "SMI": 2,
+            "FIB": 0,   # exclude FIB 1
         }
     
 # Configurable slope window sizes
@@ -42,6 +47,7 @@ SMI_SLOPE_WINDOW = 4
 
 # Default settings
 USE_NORMALIZE_MOMENTUM_STRENGTH = False
+USE_MACD_SLOPE = False
 
 class MomentumStrengthResponse(BaseModel):
     ticker: str
@@ -100,11 +106,22 @@ def calculate_ichimoku(data):
 def calculate_fibonacci_levels(data):
     max_price = data['Close'].max()
     min_price = data['Close'].min()
+    
+    # For a Series, convert it to a scalar value.
+    if hasattr(max_price, 'item'):
+        max_price = max_price.item()
+    if hasattr(min_price, 'item'):
+        min_price = min_price.item()
+    
     difference = max_price - min_price
-    level1 = max_price - difference * 0.236
-    level2 = max_price - difference * 0.382
-    level3 = max_price - difference * 0.618
-    return level1, level2, level3
+    levels = {
+        "level_23.6": max_price - difference * 0.236,
+        "level_38.2": max_price - difference * 0.382,
+        "level_50": max_price - difference * 0.5,
+        "level_61.8": max_price - difference * 0.618,
+        "level_78.6": max_price - difference * 0.786
+    }
+    return levels
 
 def weighted_median(values, weights):
     sorted_indices = np.argsort(values)
@@ -174,6 +191,53 @@ def get_stock_data(ticker, period='1y'):
     stock_data = yf.download(ticker, period=period, interval='1d', auto_adjust=False)
     return stock_data
 
+def get_stock_data2(ticker, period='1y', reference_date=None):
+    """
+    Downloads historical stock data from a given reference_date for a specified period.
+    
+    Parameters:
+      ticker (str): The stock ticker.
+      period (str): A string representing the period (e.g., '1y', '6mo', '30d').
+      reference_date (datetime or str): The reference end date for data.
+      
+    Returns:
+      DataFrame: Historical stock data between the calculated start date and the reference_date.
+    """
+    tz = timezone('Canada/Mountain')
+
+    if reference_date is None:
+        reference_date = datetime.today(tz)
+    elif not isinstance(reference_date, datetime):
+        # Convert string or other formats to datetime
+        reference_date = pd.to_datetime(reference_date).to_pydatetime()
+        reference_date = reference_date.astimezone(tz)
+
+    period = period.lower().strip()
+    if period.endswith('y'):
+        years = int(period[:-1])
+        start_date = reference_date - relativedelta(years=years)
+    elif period.endswith('mo'):
+        months = int(period[:-2])
+        start_date = reference_date - relativedelta(months=months)
+    elif period.endswith('d'):
+        days = int(period[:-1])
+        start_date = reference_date - timedelta(days=days)
+    else:
+        raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
+
+    start = start_date.strftime("%Y-%m-%d")
+    end = (reference_date + timedelta(days=1)).strftime("%Y-%m-%d") # Set the end date to the day after the reference_date
+
+    print('get_stock_data2', start, end)
+    stock_data = yf.download(
+        ticker,
+        start=start,
+        end=end,
+        interval='1d',
+        auto_adjust=False
+    )
+    return stock_data
+
 def get_stocks_data(tickers: List[str], period: str = '1y') -> pd.DataFrame:
     stocks_data = yf.download(tickers, period=period, interval='1d', auto_adjust=False, group_by='ticker')
     return stocks_data
@@ -223,21 +287,26 @@ def analyze(data, mode="conservative"):
     # 1. RSI: deviation from 50
     raw_RSI = 50 - latest_rsi
     score_RSI = weights['RSI'] * raw_RSI
+    
+    # 2. MACD: calculate percentage difference between MACD and Signal and include slope difference
+    raw_MACD_diff = (latest_macd - latest_signal) / latest_close * 100
 
-    # 2. MACD: percentage difference between MACD and Signal
-    raw_MACD = (latest_macd - latest_signal) / latest_close * 100
-    score_MACD = weights['MACD'] * raw_MACD
-
-    # Compute slopes for MACD and Signal using MACD_SLOPE_WINDOW
-    if len(data) >= MACD_SLOPE_WINDOW:
+    if USE_MACD_SLOPE and len(data) >= MACD_SLOPE_WINDOW:
         x = np.arange(MACD_SLOPE_WINDOW)
         macd_values = data['MACD'].iloc[-MACD_SLOPE_WINDOW:].values
         signal_values = data['Signal'].iloc[-MACD_SLOPE_WINDOW:].values
         macd_slope = float(np.polyfit(x, macd_values, 1)[0])
         signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+        slope_diff = macd_slope - signal_slope
     else:
-        macd_slope = 0.0
-        signal_slope = 0.0
+        slope_diff = 0.0
+
+    # Define a factor to control the influence of the slope difference (tune via backtesting)
+    slope_factor = 10  
+
+    # Combine the difference and the slope difference
+    raw_MACD = raw_MACD_diff + slope_factor * slope_diff
+    score_MACD = weights['MACD'] * raw_MACD
 
     # 3. Bollinger Bands: deviation of current price from SMA relative to band width
     latest_SMA = float((latest_upper_band + latest_lower_band) / 2) 
@@ -286,6 +355,16 @@ def analyze(data, mode="conservative"):
         slope_diff = 0.0
     score_SMI = weights['SMI'] * slope_diff
 
+    # 9. Fibonacci: calculate the relative difference between the latest close and the nearest fibonacci level
+    if fib_levels:
+        # fib_levels assumed to be a dict with levels as values
+        nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
+        raw_FIB = (nearest_fib - latest_close) / nearest_fib * 100  # 퍼센트 차이
+    else:
+        raw_FIB = 0.0
+        nearest_fib = None
+    score_FIB = weights['FIB'] * raw_FIB
+
     # Create a list of (raw_value, score) tuples
     indicators_list = [
         (raw_RSI, score_RSI),
@@ -295,7 +374,8 @@ def analyze(data, mode="conservative"):
         (raw_div, score_div),
         (raw_VP, score_VP),
         (raw_Vol, score_Vol),
-        (slope_diff, score_SMI)
+        (slope_diff, score_SMI),
+        (raw_FIB, score_FIB)
     ]
 
     # Exclude NaN when calculating final score
@@ -308,8 +388,8 @@ def analyze(data, mode="conservative"):
             "score": round(score_MACD, 2),
             "macd": round(latest_macd, 2),
             "signal": round(latest_signal, 2),
-            "macd_slope": round(macd_slope, 2),
-            "signal_slope": round(signal_slope, 2)
+            "macd_slope": round(macd_slope, 2) if USE_MACD_SLOPE else 'N/A',
+            "signal_slope": round(signal_slope, 2) if USE_MACD_SLOPE else 'N/A'
         },
         "BollingerBands": {"raw": round(raw_BB, 2), "score": round(score_BB, 2)},
         "Ichimoku": {"raw": round(raw_Ichi, 2), "score": round(score_Ichi, 2)},
@@ -323,7 +403,8 @@ def analyze(data, mode="conservative"):
             "D": round(latest_smi_d, 2),
             "K_slope": round(k_slope, 2),
             "D_slope": round(d_slope, 2)
-        }
+        },
+        "FIB": {"raw": round(raw_FIB, 2), "score": round(score_FIB, 2)},
     }
 
     print(data["Close"].min(), data["Close"].max())
@@ -341,9 +422,9 @@ def analyze(data, mode="conservative"):
     }
 
 @router.get("/{ticker}/momentum", response_model=MomentumResponse)
-async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservative"):
+async def analyze_stock(ticker: str, period: str = '1y', mode: str = "conservative", reference_date=None):
     try:
-        data = get_stock_data(ticker, period)
+        data = get_stock_data2(ticker, period, reference_date)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
     if data.empty:
@@ -388,37 +469,39 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
             latest_smi_d = float(np.nan_to_num(smi_d.iloc[i], nan=0.0))
             previous_close = float(np.nan_to_num(data['Close'].iloc[i - 1], nan=latest_close))
 
-            # RSI signal
+            # 1. RSI signal
             raw_RSI = float(50 - latest_rsi)
             score_RSI = weights['RSI'] * raw_RSI
+            
+            # 2. MACD: calculate percentage difference between MACD and Signal and include slope difference
+            raw_MACD_diff = (latest_macd - latest_signal) / latest_close * 100
 
-            # MACD signal
-            raw_MACD = float((latest_macd - latest_signal) / latest_close * 100) if latest_close != 0 else 0.0
-            score_MACD = weights['MACD'] * raw_MACD
-
-            # Calculate MACD slope
-            if i >= MACD_SLOPE_WINDOW:
+            if USE_MACD_SLOPE and len(data) >= MACD_SLOPE_WINDOW:
                 x = np.arange(MACD_SLOPE_WINDOW)
-                macd_values = data['MACD'].iloc[i - MACD_SLOPE_WINDOW + 1: i + 1].values
-                signal_values = data['Signal'].iloc[i - MACD_SLOPE_WINDOW + 1: i + 1].values
+                macd_values = data['MACD'].iloc[-MACD_SLOPE_WINDOW:].values
+                signal_values = data['Signal'].iloc[-MACD_SLOPE_WINDOW:].values
                 macd_slope = float(np.polyfit(x, macd_values, 1)[0])
                 signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+                slope_diff_macd = macd_slope - signal_slope
             else:
-                macd_slope = 0.0
-                signal_slope = 0.0
+                slope_diff_macd = 0.0
 
-            # Bollinger Bands
+            slope_factor = 10  # Factor to control the influence of slope difference
+            raw_MACD = raw_MACD_diff + slope_factor * slope_diff_macd
+            score_MACD = weights['MACD'] * raw_MACD
+
+            # 3. Bollinger Bands
             latest_SMA = float((latest_upper_band + latest_lower_band) / 2)
             band_width = float(latest_upper_band - latest_lower_band)
             raw_BB = float((latest_SMA - latest_close) / band_width) if band_width != 0 else 0.0
             score_BB = weights['BB'] * raw_BB
 
-            # Ichimoku
+            # 4. Ichimoku
             mid_value = float((latest_senkou_span_a + latest_senkou_span_b) / 2)
             raw_Ichi = float((latest_close - mid_value) / mid_value) if mid_value != 0 else 0.0
             score_Ichi = weights['ICHIMOKU'] * raw_Ichi
 
-            # Divergence
+            # 5. Divergence
             if latest_close != 0:
                 if latest_rsi <= 50:
                     raw_div = float((50 - latest_rsi) * ((latest_close - previous_close) / latest_close) * 5)
@@ -428,34 +511,45 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
                 raw_div = 0.0
             score_div = weights['DIV'] * raw_div
 
-            # Volume Profile (vp_peak is based on the entire dataset)
+            # 6. Volume Profile (vp_peak is based on the entire dataset up to the current index)
             vp_peak, vp_median, _, _ = calculate_volume_profile(data.iloc[:i+1], bins=20)
             selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
             distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
             raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
             score_VP = weights['VP'] * raw_VP
 
-            # Volume Ratio
+            # 7. Volume Ratio
             avg_volume = np.nanmean(data['Volume'].iloc[max(0, i-19):i+1].mean())
             volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
             raw_Vol = - (volume_ratio - 1) * 10 if latest_close < previous_close else (volume_ratio - 1) * 10
             score_Vol = weights['VOL'] * raw_Vol
 
-            # Calculate SMI slope
+            # 8. SMI Signal: using slopes over recent window (with SMI_SLOPE_WINDOW)
             if i >= SMI_SLOPE_WINDOW:
                 x = np.arange(SMI_SLOPE_WINDOW)
                 k_values = smi.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
                 d_values = smi_d.iloc[i - SMI_SLOPE_WINDOW + 1: i + 1].values
                 k_slope = float(np.polyfit(x, k_values, 1)[0])
                 d_slope = float(np.polyfit(x, d_values, 1)[0])
-                slope_diff = k_slope - d_slope
+                slope_diff_smi = k_slope - d_slope
             else:
                 k_slope = 0.0
                 d_slope = 0.0
-                slope_diff = 0.0
-            score_SMI = weights['SMI'] * slope_diff
+                slope_diff_smi = 0.0
+            score_SMI = weights['SMI'] * slope_diff_smi
 
-            # Create a list of (raw_value, score) tuples
+            # 9. Fibonacci: calculate the relative difference between the nearest fibonacci level and the latest close (reversed sign)
+            # Use data up to the current index for calculating Fibonacci levels
+            fib_levels = calculate_fibonacci_levels(data.iloc[:i+1])
+            if fib_levels:
+                nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
+                raw_FIB = (nearest_fib - latest_close) / nearest_fib * 100  # 부호 반대로 적용
+            else:
+                raw_FIB = 0.0
+                nearest_fib = None
+            score_FIB = weights['FIB'] * raw_FIB
+
+            # Create a list of (raw_value, score) tuples for all indicators
             indicators_list = [
                 (raw_RSI, score_RSI),
                 (raw_MACD, score_MACD),
@@ -464,13 +558,14 @@ def analyze_all(data, mode="conservative", normalize=USE_NORMALIZE_MOMENTUM_STRE
                 (raw_div, score_div),
                 (raw_VP, score_VP),
                 (raw_Vol, score_Vol),
-                (slope_diff, score_SMI)
+                (slope_diff_smi, score_SMI),
+                (raw_FIB, score_FIB)
             ]
 
             # Exclude NaN when calculating final score
             final_score = calculate_final_score(indicators_list)
 
-            # Store momentum_strength
+            # Store momentum_strength and close price by date
             date_str = data.index[i].strftime("%Y-%m-%d")
             momentum_strength[date_str] = final_score
             close_prices[date_str] = round(latest_close, 2)
