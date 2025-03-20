@@ -29,12 +29,12 @@ def get_weight_set(mode: str):
     else:  # Default: conservative
         return {
             "RSI": 1,
-            "MACD":  2,
+            "MACD":  1,
             "SMI": 1,
             "BB": 10,
             "ICHIMOKU": 20,
-            "DIV": 1,
-            "VP": 1,
+            "DIV": 2,
+            "VP": 2,
             "VOL": 2,
             "OBV": 2,
             "FIB": 0,   # exclude FIB 1,
@@ -515,7 +515,7 @@ def analyze(data, mode="conservative", reference_date=None):
         "BollingerBands": {"raw": round(raw_BB, 2), "score": round(score_BB, 2)},
         "Ichimoku": {"raw": round(raw_Ichi, 2), "score": round(score_Ichi, 2)},
         "Divergence": {"raw": round(raw_div, 2), "score": round(score_div, 2)},
-        "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
+        "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2), "vp_median": round(vp_median, 2)},
         "BalanceVolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
         "OBV": {"raw": round(norm_OBV, 2), "score": round(score_OBV, 2)},
         "SMI": {
