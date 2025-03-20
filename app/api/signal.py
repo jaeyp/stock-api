@@ -9,7 +9,7 @@ from app.api.momentum import analyze, get_stock_data2, get_stocks_data2
 router = APIRouter()
 
 # Safe default ticker list (modified to copy from default_factory)
-DEFAULT_TICKERS = ["QLD", "SOXL", "LABU", "FSLR", "ENPH", "PLUG", "BE", "STRL", "BWXT", "OKLO", 
+DEFAULT_TICKERS = ["IWF", "QLD", "SOXX", "SMH", "SOXL", "LABU", "FSLR", "ENPH", "PLUG", "BE", "STRL", "BWXT", "OKLO", 
                     "TEM", "RXRX", "CRSP", "ZG", "RDFN", "PGY", "UPST", "HOOD", "ZETA", "S", 
                     "PINS", "U", "LLY", "NVO", "LUNR", "AMZN", "CRM", "UBER", "AAPL", "META", "RGTI", "IONQ"]
 
@@ -17,6 +17,7 @@ class TradeSignalResponse(BaseModel):
     ticker: str
     date: str
     price: str
+    momentum: str
     strength: Dict[str, str]
 
 class MultiTradeSignalResponse(BaseModel):
@@ -38,6 +39,7 @@ async def get_trade_signal(ticker: str, period: str = '6mo', mode: str = "conser
         "ticker": ticker,
         "date": conservative_results['date'],
         "price": conservative_results['close'],
+        "momentum": conservative_results['momentum_strength'],
         "strength": {
             "conservative": conservative_results['latest_diff'],
             "aggressive": aggressive_results['latest_diff']
@@ -92,6 +94,7 @@ async def get_trade_signals(
                 "ticker": ticker,
                 "date": conservative_results['date'],
                 "price": conservative_results['close'],
+                "momentum": conservative_results['momentum_strength'],
                 "strength": {
                     "conservative": conservative_results['latest_diff'],
                     "aggressive": aggressive_results['latest_diff']

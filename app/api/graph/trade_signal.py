@@ -8,8 +8,8 @@ import matplotlib.dates as mdates
 from datetime import datetime
 from ..momentum import analyze_all, get_stock_data2
 
-CONSERVATIVE_BUY_THRESHOLD = 110
-CONSERVATIVE_SELL_THRESHOLD = 120
+CONSERVATIVE_BUY_THRESHOLD = 100
+CONSERVATIVE_SELL_THRESHOLD = 110
 AGGRESSIVE_BUY_THRESHOLD = 100
 AGGRESSIVE_SELL_THRESHOLD = 110
 
@@ -68,13 +68,11 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         )  # Diamond (orange) """
         plt.scatter(
             large_diff_dates[is_below], large_diff_values[is_below],
-            c=large_diff_values[is_below], cmap='Blues', marker='o', s=100, label="Sell Signal",
-            vmin=60, vmax=100
+            color='#1e88e5', marker='o', s=100, label="Sell Signal"
         )
         plt.scatter(
             large_diff_dates[is_above], large_diff_values[is_above],
-            c=large_diff_values[is_above], cmap='Reds_r', marker='D', s=90, label="Buy Signal",
-            vmin=-100, vmax=-60
+            color='#f77f00', marker='D', s=90, label="Buy Signal"
         )
 
         # 10. Display Close Price below each marker (in black)

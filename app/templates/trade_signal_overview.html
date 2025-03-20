@@ -89,29 +89,34 @@
       }
       .action-label {
         position: absolute;
-        top: -14px;
-        right: -10px;
-        font-size: 1.2rem;
+        top: -20px;
+        right: -14px;
+        font-size: 1.4rem;
         font-weight: bold;
         padding: 10px;
         border: 4px solid currentColor;
         border-radius: 50%;
-        width: 40px;
-        height: 40px;
+        width: 38px;
+        height: 38px;
         display: flex;
         align-items: center;
         justify-content: center;
         background-color: rgba(255, 255, 255, 0);
-        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+        /* box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3); */
         transform: rotate(-15deg);
       }
       .action-label.sell {
-        color: red;
+        color: rgba(255, 0, 0, 0.5);
+        border-color: rgba(255, 0, 0, 0.5);
         transform: rotate(15deg);
       }
       .action-label.buy {
-        color: blue;
+        color: rgba(0, 0, 255, 0.5);
+        border-color: rgba(0, 0, 255, 0.5);
         transform: rotate(-15deg);
+      }
+      .right-align {
+        margin-left: auto;
       }
     </style>
   </head>
@@ -134,6 +139,10 @@
       </div>
       <div id="loading">Loading...</div>
       <div class="columns" id="columns" style="display: none">
+        <div class="column" id="momentum-column">
+          <h2>Momentum List</h2>
+          <div id="momentum-cards"></div>
+        </div>
         <div class="column" id="buy-column">
           <h2>Buy List</h2>
           <div id="buy-cards"></div>
@@ -184,7 +193,7 @@
         row.appendChild(priceEl);
 
         const strengthEl = document.createElement("div");
-        strengthEl.className = "strength";
+        strengthEl.className = "strength right-align";
         const strengthValue = parseFloat(signal.strength[selectedField]);
         strengthEl.textContent = strengthValue.toFixed(2);
         if (strengthValue < 0) {
@@ -197,8 +206,8 @@
         card.appendChild(row);
 
         let actionText = "";
-        const buySignalThreshold = 110;
-        const sellSignalThreshold = 120;
+        const buySignalThreshold = 100;
+        const sellSignalThreshold = 110;
         if (strengthValue <= -buySignalThreshold) {
           actionText = "BUY";
         } else if (strengthValue >= sellSignalThreshold) {
@@ -214,6 +223,27 @@
         return card;
       }
 
+      function createMomentumCard(signal) {
+        const card = document.createElement("div");
+        card.className = "card";
+        const row = document.createElement("div");
+        row.className = "card-row";
+
+        const tickerEl = document.createElement("div");
+        tickerEl.className = "ticker";
+        tickerEl.textContent = signal.ticker;
+        row.appendChild(tickerEl);
+
+        const momentumEl = document.createElement("div");
+        momentumEl.className = "strength right-align";
+        const momentumValue = parseFloat(signal.momentum);
+        momentumEl.textContent = momentumValue.toFixed(2);
+        row.appendChild(momentumEl);
+
+        card.appendChild(row);
+        return card;
+      }
+
       function updateUI(mode) {
         const selectedField =
           mode === "conservative" ? "conservative" : "aggressive";
@@ -224,6 +254,17 @@
         const sellSignals = tradeSignalsData.filter(
           (signal) => parseFloat(signal.strength[selectedField]) > 0
         );
+
+        const momentumSignals = [...tradeSignalsData];
+        momentumSignals.sort(
+          (a, b) => parseFloat(b.momentum) - parseFloat(a.momentum)
+        );
+
+        document.getElementById("momentum-cards").innerHTML = "";
+        const momentumContainer = document.getElementById("momentum-cards");
+        momentumSignals.forEach((signal) => {
+          momentumContainer.appendChild(createMomentumCard(signal));
+        });
 
         buySignals.sort(
           (a, b) =>
