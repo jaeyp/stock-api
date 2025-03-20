@@ -16,7 +16,7 @@ def get_weight_set(mode: str):
     if mode == "aggressive":
         return {
             "RSI": 2,
-            "MACD": 10,
+            "MACD": 4,
             "SMI": 2,
             "BB": 10,
             "ICHIMOKU": 20,
@@ -28,13 +28,13 @@ def get_weight_set(mode: str):
     else:  # Default: conservative
         return {
             "RSI": 1,
-            "MACD":  1,
+            "MACD":  2,
             "SMI": 1,
             "BB": 10,
             "ICHIMOKU": 20,
             "DIV": 1,
             "VP": 1,
-            "VOL": 10,
+            "VOL": 2,
             "FIB": 0,   # exclude FIB 1,
         }
     
@@ -368,40 +368,30 @@ def analyze(data, mode="conservative", reference_date=None):
         signal_values = signal_series.iloc[-MACD_SLOPE_WINDOW:].values
         macd_slope = float(np.polyfit(x, macd_values, 1)[0])
         signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+
+        macd_last = float(macd_values[-1])
+        signal_last = float(signal_values[-1])
+
+        value_diff_macd = macd_last - signal_last
         slope_diff_macd = macd_slope - signal_slope
 
-        if macd_values[-1] < 0 and signal_values[-1] < 0:
-            selected_val = min(macd_values[-1], signal_values[-1])
-        elif macd_values[-1] > 0 and signal_values[-1] > 0:
-            selected_val = max(macd_values[-1], signal_values[-1])
+        if macd_last > signal_last:
+            if macd_slope > signal_slope:
+                raw_MACD = (value_diff_macd + slope_diff_macd) / 3
+            else:
+                raw_MACD = slope_diff_macd / 2
         else:
-            selected_val = signal_values[-1]
-        selected_val = float(selected_val)
+            if macd_slope < signal_slope:
+                raw_MACD = (value_diff_macd + slope_diff_macd) / 3
+            else:
+                raw_MACD = slope_diff_macd / 2
     else:
-        slope_diff_macd = 0.0
-        selected_val = 0.0
+        macd_slope = 0.0
+        signal_slope = 0.0
+        raw_MACD = 0.0
 
-    score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
+    score_MACD = weights['MACD'] * raw_MACD * 10    
 
-    """ if len(smi_series) >= SMI_SLOPE_WINDOW:
-        x = np.arange(SMI_SLOPE_WINDOW)
-        k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
-        d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
-        k_slope = float(np.polyfit(x, k_values, 1)[0])
-        d_slope = float(np.polyfit(x, d_values, 1)[0])
-        slope_diff_smi = k_slope - d_slope
-        if k_values[-1] < 0 and d_values[-1] < 0:
-            selected_val = min(k_values[-1], d_values[-1])
-        elif k_values[-1] > 0 and d_values[-1] > 0:
-            selected_val = max(k_values[-1], d_values[-1])
-        else:
-            selected_val = d_values[-1]
-        selected_val = float(selected_val)
-    else:
-        k_slope = 0.0
-        d_slope = 0.0
-        slope_diff_smi = 0.0
-    score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10 """
     if len(smi_series) >= SMI_SLOPE_WINDOW:
         x = np.arange(SMI_SLOPE_WINDOW)
         k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
@@ -499,7 +489,7 @@ def analyze(data, mode="conservative", reference_date=None):
         "Ichimoku": {"raw": round(raw_Ichi, 2), "score": round(score_Ichi, 2)},
         "Divergence": {"raw": round(raw_div, 2), "score": round(score_div, 2)},
         "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
-        "VolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
+        "BalanceVolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
         "SMI": {
             "raw": round(slope_diff_smi, 2),
             "score": round(score_SMI, 2),
@@ -596,41 +586,29 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
                 signal_values = signal_series.iloc[-MACD_SLOPE_WINDOW:].values
                 macd_slope = float(np.polyfit(x, macd_values, 1)[0])
                 signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+
+                macd_last = float(macd_values[-1])
+                signal_last = float(signal_values[-1])
+
+                value_diff_macd = macd_last - signal_last
                 slope_diff_macd = macd_slope - signal_slope
 
-                if macd_values[-1] < 0 and signal_values[-1] < 0:
-                    selected_val = min(macd_values[-1], signal_values[-1])
-                elif macd_values[-1] > 0 and signal_values[-1] > 0:
-                    selected_val = max(macd_values[-1], signal_values[-1])
+                if macd_last > signal_last:
+                    if macd_slope > signal_slope:
+                        raw_MACD = (value_diff_macd + slope_diff_macd) / 3
+                    else:
+                        raw_MACD = slope_diff_macd / 2
                 else:
-                    selected_val = signal_values[-1]
-                selected_val = float(selected_val)
+                    if macd_slope < signal_slope:
+                        raw_MACD = (value_diff_macd + slope_diff_macd) / 3
+                    else:
+                        raw_MACD = slope_diff_macd / 2
             else:
-                slope_diff_macd = 0.0
-                selected_val = 0.0
+                macd_slope = 0.0
+                signal_slope = 0.0
+                raw_MACD = 0.0
 
-            score_MACD = weights['MACD'] * (slope_diff_macd * 10 - selected_val)
-
-            # 3. SMI Signal
-            """ if len(smi_series) >= SMI_SLOPE_WINDOW:
-                x = np.arange(SMI_SLOPE_WINDOW)
-                k_values = smi_series.iloc[-SMI_SLOPE_WINDOW:].values
-                d_values = smi_d_series.iloc[-SMI_SLOPE_WINDOW:].values
-                k_slope = float(np.polyfit(x, k_values, 1)[0])
-                d_slope = float(np.polyfit(x, d_values, 1)[0])
-                slope_diff_smi = k_slope - d_slope
-                if k_values[-1] < 0 and d_values[-1] < 0:
-                    selected_val = min(k_values[-1], d_values[-1])
-                elif k_values[-1] > 0 and d_values[-1] > 0:
-                    selected_val = max(k_values[-1], d_values[-1])
-                else:
-                    selected_val = d_values[-1]
-                selected_val = float(selected_val);
-            else:
-                k_slope = 0.0
-                d_slope = 0.0
-                slope_diff_smi = 0.0
-            score_SMI = weights['SMI'] * (slope_diff_smi + selected_val) / 10 """
+            score_MACD = weights['MACD'] * raw_MACD * 10
 
             if len(smi_series) >= SMI_SLOPE_WINDOW:
                 x = np.arange(SMI_SLOPE_WINDOW)
