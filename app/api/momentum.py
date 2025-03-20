@@ -23,6 +23,7 @@ def get_weight_set(mode: str):
             "DIV": 1,
             "VP": 1,
             "VOL": 2,
+            "OBV": 2,
             "FIB": 0,   # exclude FIB 4,
         }
     else:  # Default: conservative
@@ -35,6 +36,7 @@ def get_weight_set(mode: str):
             "DIV": 1,
             "VP": 1,
             "VOL": 2,
+            "OBV": 2,
             "FIB": 0,   # exclude FIB 1,
         }
     
@@ -185,6 +187,20 @@ def compute_divergence_series(data):
             div_val = - (rsi_val - 50) * (price_change / close_val) * 5
         divergences.append(div_val)
     return pd.Series(divergences, index=data.index[1:])
+
+
+def compute_obv(data):
+    obv_values = [0]
+    close_series = data["Close"].squeeze()
+    volume_series = data["Volume"].squeeze()
+    for i in range(1, len(close_series)):
+        if close_series.iat[i] > close_series.iat[i-1]:
+            obv_values.append(obv_values[-1] + volume_series.iat[i])
+        elif close_series.iat[i] < close_series.iat[i-1]:
+            obv_values.append(obv_values[-1] - volume_series.iat[i])
+        else:
+            obv_values.append(obv_values[-1])
+    return pd.Series(obv_values, index=data.index)
 
 def normalize_scores_tanh(momentum_strength):
     scores = np.array(list(momentum_strength.values()))
@@ -452,6 +468,16 @@ def analyze(data, mode="conservative", reference_date=None):
     raw_Vol = - (volume_ratio - 1) if latest_close < previous_close else (volume_ratio - 1)
     score_Vol = weights['VOL'] * raw_Vol
 
+    obv_series = compute_obv(window_data)
+    obv_latest = float(obv_series.iloc[-1])
+    obv_min = float(obv_series.min())
+    obv_max = float(obv_series.max())
+    if obv_max != obv_min:
+        norm_OBV = ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10
+    else:
+        norm_OBV = 0.0
+    score_OBV = weights['OBV'] * norm_OBV
+
     fib_levels = calculate_fibonacci_levels(window_data)
     if fib_levels:
         nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
@@ -469,7 +495,8 @@ def analyze(data, mode="conservative", reference_date=None):
         (raw_VP, score_VP),
         (raw_Vol, score_Vol),
         (slope_diff_smi, score_SMI),
-        (raw_FIB, score_FIB)
+        (raw_FIB, score_FIB),
+        (norm_OBV, score_OBV)
     ]
 
     # Exclude NaN when calculating final score
@@ -490,6 +517,7 @@ def analyze(data, mode="conservative", reference_date=None):
         "Divergence": {"raw": round(raw_div, 2), "score": round(score_div, 2)},
         "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2)},
         "BalanceVolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
+        "OBV": {"raw": round(norm_OBV, 2), "score": round(score_OBV, 2)},
         "SMI": {
             "raw": round(slope_diff_smi, 2),
             "score": round(score_SMI, 2),
@@ -678,7 +706,18 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
             raw_Vol = - (volume_ratio - 1) if latest_close < previous_close else (volume_ratio - 1)
             score_Vol = weights['VOL'] * raw_Vol
 
-            # 9. Fibonacci: window_data를 사용하여 계산
+            # 9. On-Balance Volume
+            obv_series = compute_obv(window_data)
+            obv_latest = float(obv_series.iloc[-1])
+            obv_min = float(obv_series.min())
+            obv_max = float(obv_series.max())
+            if obv_max != obv_min:
+                norm_OBV = ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10
+            else:
+                norm_OBV = 0.0
+            score_OBV = weights['OBV'] * norm_OBV
+
+            # 10. Fibonacci Level
             fib_levels = calculate_fibonacci_levels(window_data)
             if fib_levels:
                 nearest_fib = min(fib_levels.values(), key=lambda level: abs(level - latest_close))
@@ -696,7 +735,8 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
                 (raw_VP, score_VP),
                 (raw_Vol, score_Vol),
                 (slope_diff_smi, score_SMI),
-                (raw_FIB, score_FIB)
+                (raw_FIB, score_FIB),
+                (norm_OBV, score_OBV)
             ]
             final_score = calculate_final_score(indicators_list)
             date_str = current_date.strftime("%Y-%m-%d")
