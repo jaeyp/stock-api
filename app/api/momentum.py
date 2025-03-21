@@ -79,6 +79,104 @@ def calculate_macd(data):
     signal = macd.ewm(span=9, adjust=False).mean()
     return macd, signal
 
+""" def calculate_macd_score(macd_series, signal_series, bonus_scale=1.0):
+    #macd_series, signal_series: pandas Series (최근 데이터를 포함)
+    #MACD_SLOPE_WINDOW: 기울기 계산에 사용할 데이터 포인트 수
+    #bonus_scale: 전환 구간 보너스의 배율 조절 (필요에 따라 조정)
+
+    # 최근 데이터 사용
+    x = np.arange(MACD_SLOPE_WINDOW)
+    macd_values = macd_series.iloc[-MACD_SLOPE_WINDOW:].values
+    signal_values = signal_series.iloc[-MACD_SLOPE_WINDOW:].values
+
+    # 기본 점수: 마지막 값에서 (macd - signal)
+    base_score = macd_values[-1] - signal_values[-1]
+
+    # 상수 설정 (예시로 계산된 값)
+    A = 2.83   # 약 exp(1.04)
+    b = 0.52   # 약 ln(8)/4
+
+    # 업/다운 구간에 따른 multiplier 적용
+    if macd_values[-1] > signal_values[-1]:
+        # 상승 구간: macd가 낮을수록 multiplier가 커짐
+        multiplier = A * np.exp(-b * macd_values[-1])
+    else:
+        # 하락 구간: macd가 높을수록 multiplier가 커짐
+        multiplier = A * np.exp(b * macd_values[-1])
+    
+    adjusted_base_score = base_score * multiplier
+
+    bonus = 0.0
+
+    # 하락추세( macd < signal)에서 전환 보너스 계산 (기존 로직)
+    if macd_values[-1] < signal_values[-1]:
+        if MACD_SLOPE_WINDOW >= 3:
+            x_prev = np.arange(MACD_SLOPE_WINDOW - 1)
+            prev_macd_slope = float(np.polyfit(x_prev, macd_values[:-1], 1)[0])
+        else:
+            prev_macd_slope = 0.0
+
+        current_macd_slope = float(np.polyfit(x, macd_values, 1)[0])
+        current_signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+
+        # TODO: 전환조건 오류!!
+        # 전환 조건: 이전 macd slope가 음수이고 현재가 양수
+        if prev_macd_slope < 0 and current_macd_slope > 0:
+            # macd가 signal을 상향 돌파하는 지점 탐색
+            crossing_index = None
+            for i in range(1, len(macd_values)):
+                if macd_values[i-1] < signal_values[i-1] and macd_values[i] >= signal_values[i]:
+                    crossing_index = i
+                    break
+
+            print('전환발생1: ', crossing_index, current_signal_slope)
+            # 돌파가 발생하고 signal slope가 양수이면 보너스 부여 (양수)
+            if crossing_index is not None and current_signal_slope > 0:
+                macd_at_crossing = macd_values[crossing_index]
+                if macd_at_crossing < 0:
+                    bonus = bonus_scale * (np.exp(-macd_at_crossing) - 1)
+                    print('전환보너스1-1: ', bonus)
+                else:
+                    bonus = bonus_scale * (np.exp(macd_at_crossing) - 1)
+                    print('전환보너스1-2: ', bonus)
+
+    # 상승추세( macd > signal)에서 전환 보너스 계산 (하락 전환, 반대 로직)
+    elif macd_values[-1] > signal_values[-1]:
+        if MACD_SLOPE_WINDOW >= 3:
+            x_prev = np.arange(MACD_SLOPE_WINDOW - 1)
+            prev_macd_slope = float(np.polyfit(x_prev, macd_values[:-1], 1)[0])
+        else:
+            prev_macd_slope = 0.0
+
+        current_macd_slope = float(np.polyfit(x, macd_values, 1)[0])
+        current_signal_slope = float(np.polyfit(x, signal_values, 1)[0])
+
+        # 전환 조건: 이전 macd slope가 양수이고 현재가 음수 (즉, 하락 전환)
+        if prev_macd_slope > 0 and current_macd_slope < 0:
+            # macd가 signal을 하향 돌파하는 지점 탐색
+            crossing_index = None
+            for i in range(1, len(macd_values)):
+                if macd_values[i-1] > signal_values[i-1] and macd_values[i] <= signal_values[i]:
+                    crossing_index = i
+                    break
+
+            print('전환발생2: ', crossing_index, current_signal_slope)
+            # 돌파가 발생하고 signal slope가 음수이면 보너스 부여 (음수로 적용)
+            if crossing_index is not None and current_signal_slope < 0:
+                macd_at_crossing = macd_values[crossing_index]
+                if macd_at_crossing > 0:
+                    bonus = - bonus_scale * (np.exp(macd_at_crossing) - 1)
+                    print('전환보너스2-1: ', bonus)
+                else:
+                    bonus = - bonus_scale * (np.exp(-macd_at_crossing) - 1)
+                    print('전환보너스2-2: ', bonus)
+
+    # 최종 점수 = 보정된 기본 점수 + 보너스 (상황에 따라 보너스는 양수 또는 음수)
+    final_score = adjusted_base_score + bonus
+    final_score = max(min(final_score, 20), -20)
+    
+    return final_score """
+
 def calculate_bollinger_bands(data, window=20):
     if len(data) < window:
         return pd.Series([np.nan] * len(data), index=data.index), pd.Series([np.nan] * len(data), index=data.index)
@@ -219,6 +317,7 @@ def normalize_scores_tanh(momentum_strength):
 def calculate_final_score(indicators):
     # Add only non-NaN scores to valid_scores
     valid_scores = [score for raw, score in indicators if not np.isnan(raw)]
+    # TODO: 모멘텀 가중치 적용 ((smi + macd) * obv) / x
     if valid_scores:
         return round(sum(valid_scores), 2)
     else:
@@ -378,6 +477,9 @@ def analyze(data, mode="conservative", reference_date=None):
     raw_RSI = 40 - latest_rsi
     score_RSI = weights['RSI'] * raw_RSI
 
+    #macd_score = calculate_macd_score(macd_series, signal_series)
+    #print("MACD score: ", macd_score)
+
     if USE_MACD_SLOPE and len(window_data) >= MACD_SLOPE_WINDOW:
         x = np.arange(MACD_SLOPE_WINDOW)
         macd_values = macd_series.iloc[-MACD_SLOPE_WINDOW:].values
@@ -388,7 +490,7 @@ def analyze(data, mode="conservative", reference_date=None):
         macd_last = float(macd_values[-1])
         signal_last = float(signal_values[-1])
 
-        value_diff_macd = macd_last - signal_last
+        value_diff_macd = (macd_last - signal_last) * 20
         slope_diff_macd = macd_slope - signal_slope
 
         if macd_last > signal_last:
@@ -406,7 +508,8 @@ def analyze(data, mode="conservative", reference_date=None):
         signal_slope = 0.0
         raw_MACD = 0.0
 
-    score_MACD = weights['MACD'] * raw_MACD * 10    
+    score_MACD = weights['MACD'] * raw_MACD
+    score_MACD = max(min(score_MACD, 20), -20)
 
     if len(smi_series) >= SMI_SLOPE_WINDOW:
         x = np.arange(SMI_SLOPE_WINDOW)
@@ -461,6 +564,7 @@ def analyze(data, mode="conservative", reference_date=None):
     distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
     raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
     score_VP = weights['VP'] * raw_VP
+    score_VP = max(min(score_VP, 20), -20)
 
     rolling_volume = window_data['Volume'].rolling(window=20).mean()
     avg_volume = np.nanmean(rolling_volume.values) if not rolling_volume.dropna().empty else 0.0
@@ -618,7 +722,7 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
                 macd_last = float(macd_values[-1])
                 signal_last = float(signal_values[-1])
 
-                value_diff_macd = macd_last - signal_last
+                value_diff_macd = (macd_last - signal_last) * 20
                 slope_diff_macd = macd_slope - signal_slope
 
                 if macd_last > signal_last:
@@ -636,7 +740,8 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
                 signal_slope = 0.0
                 raw_MACD = 0.0
 
-            score_MACD = weights['MACD'] * raw_MACD * 10
+            score_MACD = weights['MACD'] * raw_MACD
+            score_MACD = max(min(score_MACD, 20), -20)
 
             if len(smi_series) >= SMI_SLOPE_WINDOW:
                 x = np.arange(SMI_SLOPE_WINDOW)
@@ -695,6 +800,7 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
             distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
             raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
             score_VP = weights['VP'] * raw_VP
+            score_VP = max(min(score_VP, 20), -20)
 
             # 8. Volume Ratio
             rolling_volume = window_data['Volume'].rolling(window=20).mean()
