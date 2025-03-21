@@ -93,6 +93,19 @@
       .ticker-other-button:hover {
         background-color: #ff580a;
       }
+      .ticker-canada-button {
+        margin: 4px 8px;
+        padding: 8px 12px;
+        border: none;
+        background-color: #9d0208;
+        color: white;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      .ticker-canada-button:hover {
+        background-color: #8b0000;
+      }
       .input-container {
         display: flex;
         align-items: center;
@@ -172,6 +185,20 @@
       ];
       const favoriteTickersNabak = ["AMZN", "CRM", "UBER"];
       const otherTickers = ["AAPL", "META", "RGTI", "IONQ"];
+      const canadaTickers = [
+        "RY.TO",
+        "BMO.TO",
+        "CM.TO",
+        "CNQ.TO",
+        "IMO.TO",
+        "FTS.TO",
+        "CPX.TO",
+        "BDT.TO",
+        "ATZ.TO",
+        "QBR-B.TO",
+        "SAP.TO",
+        "LAS-A.TO",
+      ];
 
       window.onload = function () {
         const etfContainer = document.getElementById("etf-tickers");
@@ -231,6 +258,16 @@
           let btn = document.createElement("button");
           btn.innerText = ticker;
           btn.className = "ticker-other-button";
+          btn.onclick = function () {
+            document.getElementById("ticker").value = ticker;
+            fetchGraph();
+          };
+          otherTickerContainer.appendChild(btn);
+        });
+        canadaTickers.forEach((ticker) => {
+          let btn = document.createElement("button");
+          btn.innerText = ticker;
+          btn.className = "ticker-canada-button";
           btn.onclick = function () {
             document.getElementById("ticker").value = ticker;
             fetchGraph();
