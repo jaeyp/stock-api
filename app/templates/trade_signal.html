@@ -15,18 +15,44 @@
         max-width: 100%;
         height: auto;
       }
-      .etf-button {
+      .etf-button1 {
         margin: 4px 8px;
         padding: 8px 12px;
         border: none;
-        background-color: #ced4da;
+        background-color: #bcb8b1;
         color: black;
         cursor: pointer;
         border-radius: 4px;
         font-size: 14px;
       }
-      .etf-button:hover {
-        background-color: #adb5bd;
+      .etf-button1:hover {
+        background-color: #aca8a1;
+      }
+      .etf-button2 {
+        margin: 4px 8px;
+        padding: 8px 12px;
+        border: none;
+        background-color: #463f3a;
+        color: white;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      .etf-button2:hover {
+        background-color: #362f2a;
+      }
+      .etf-button3 {
+        margin: 4px 8px;
+        padding: 8px 12px;
+        border: none;
+        background-color: #8a817c;
+        color: white;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      .etf-button3:hover {
+        background-color: #7a716c;
       }
       .ticker-button {
         margin: 4px 8px;
@@ -106,24 +132,17 @@
       }
     </style>
     <script>
-      const etfTickers = [
-        "VOO",
-        "IWF",
-        "IWM",
-        "UWM",
-        "QQQ",
+      const etfGroup1Tickers = ["VOO", "QQQ", "IWF", "IWM", "SOXX", "SMH"];
+      const etfGroup2Tickers = [
         "QLD",
+        "UWM",
         "TQQQ",
         "SQQQ",
-        "SOXX",
-        "SMH",
         "SOXL",
         "LABU",
         "BULZ",
-        "DXYZ",
-        "QTUM",
-        "BITX",
       ];
+      const etfGroup3Tickers = ["GLD", "BITX", "MCHI", "EFA", "DXYZ", "QTUM"];
       const favoriteTickers = [
         "FSLR",
         "ENPH",
@@ -158,10 +177,30 @@
         const etfContainer = document.getElementById("etf-tickers");
         const tickerContainer = document.getElementById("favorite-tickers");
         const otherTickerContainer = document.getElementById("other-tickers");
-        etfTickers.forEach((ticker) => {
+        etfGroup1Tickers.forEach((ticker) => {
           let btn = document.createElement("button");
           btn.innerText = ticker;
-          btn.className = "etf-button";
+          btn.className = "etf-button1";
+          btn.onclick = function () {
+            document.getElementById("ticker").value = ticker;
+            fetchGraph();
+          };
+          etfContainer.appendChild(btn);
+        });
+        etfGroup2Tickers.forEach((ticker) => {
+          let btn = document.createElement("button");
+          btn.innerText = ticker;
+          btn.className = "etf-button2";
+          btn.onclick = function () {
+            document.getElementById("ticker").value = ticker;
+            fetchGraph();
+          };
+          etfContainer.appendChild(btn);
+        });
+        etfGroup3Tickers.forEach((ticker) => {
+          let btn = document.createElement("button");
+          btn.innerText = ticker;
+          btn.className = "etf-button3";
           btn.onclick = function () {
             document.getElementById("ticker").value = ticker;
             fetchGraph();

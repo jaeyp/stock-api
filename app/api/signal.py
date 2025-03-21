@@ -9,9 +9,8 @@ from app.api.momentum import analyze, get_stock_data2, get_stocks_data2
 router = APIRouter()
 
 # Safe default ticker list (modified to copy from default_factory)
-DEFAULT_TICKERS = ["VOO", "IWF", "IWM", "UWM", "QQQ", "QLD", "TQQQ", "SQQQ" "SOXX", "SMH", "SOXL", "LABU", "BULZ", "DXYZ", "QTUM", 
-                   "BITX", "FSLR", "ENPH", "PLUG", "BE", "STRL", "BWXT", "VST","OKLO", "SMR",
-                   "TEM", "RXRX", "CRSP", "O", "ZG", "RDFN", "PGY", "UPST", "HOOD", "ZETA", "S", 
+DEFAULT_TICKERS = ["VOO", "QQQ", "IWF", "IWM", "SOXX", "SMH", "QLD", "UWM", "TQQQ", "SQQQ", "SOXL", "LABU", "BULZ", "GLD", "BITX", "MCHI", "EFA", "DXYZ", "QTUM",
+                   "FSLR", "ENPH", "PLUG", "BE", "STRL", "BWXT", "VST","OKLO", "SMR","TEM", "RXRX", "CRSP", "O", "ZG", "RDFN", "PGY", "UPST", "HOOD", "ZETA", "S", 
                    "PINS", "U", "LLY", "NVO", "LUNR", "AMZN", "CRM", "UBER", "AAPL", "META", "RGTI", "IONQ"]
 
 class TradeSignalResponse(BaseModel):
