@@ -12,7 +12,7 @@
         padding: 20px;
       }
       .container {
-        max-width: 900px;
+        max-width: 1200px;
         margin: 0 auto;
       }
       h1 {
@@ -65,21 +65,50 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         position: relative;
         overflow: visible;
+        width: 320px;
+      }
+      #momentum-cards,
+      #buy-cards,
+      #sell-cards {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
       }
       .card-row {
         display: flex;
         align-items: center;
+        width: 100%;
+      }
+      .left-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .right-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-left: auto;
       }
       .ticker {
         font-size: 1.4em;
         font-weight: 700;
         color: #2b2d42;
-        margin-right: 15px;
       }
-      .price,
+      .price {
+        font-size: 1em;
+        font-weight: 600;
+        color: gray;
+      }
+      .momentum {
+        font-size: 1em;
+        font-weight: 600;
+        color: gray;
+        text-align: right;
+      }
       .strength {
-        font-size: 1.1em;
-        margin-right: 10px;
+        font-size: 1.4em;
+        font-weight: 600;
       }
       .strength.negative {
         color: blue;
@@ -87,22 +116,27 @@
       .strength.positive {
         color: red;
       }
+      .momentum-black {
+        font-size: 1.4em;
+        font-weight: 600;
+        color: black;
+        text-align: right;
+      }
       .action-label {
         position: absolute;
-        top: -20px;
-        right: -14px;
-        font-size: 1.4rem;
+        top: -24px;
+        right: -16px;
+        font-size: 1.6rem;
         font-weight: bold;
         padding: 10px;
         border: 4px solid currentColor;
         border-radius: 50%;
-        width: 38px;
-        height: 38px;
+        width: 44px;
+        height: 44px;
         display: flex;
         align-items: center;
         justify-content: center;
         background-color: rgba(255, 255, 255, 0);
-        /* box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3); */
         transform: rotate(-15deg);
       }
       .action-label.sell {
@@ -115,8 +149,17 @@
         border-color: rgba(0, 0, 255, 0.5);
         transform: rotate(-15deg);
       }
-      .right-align {
-        margin-left: auto;
+      .ticker-name {
+        font-size: 0.9em;
+        margin-top: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        box-sizing: border-box;
+      }
+      .tags {
+        font-size: 0.8em;
+        color: #777;
       }
     </style>
   </head>
@@ -172,28 +215,36 @@
           "Data Query: " + formatted;
       }
       updateTimestamp();
-
       let tradeSignalsData = null;
-
       function createCard(signal, selectedField) {
         const card = document.createElement("div");
         card.className = "card";
-
+        if (signal.type === "ETF") {
+          card.style.backgroundColor = "#e0f7ff";
+        }
         const row = document.createElement("div");
         row.className = "card-row";
-
+        const leftGroup = document.createElement("div");
+        leftGroup.className = "left-group";
         const tickerEl = document.createElement("div");
         tickerEl.className = "ticker";
         tickerEl.textContent = signal.ticker;
-        row.appendChild(tickerEl);
-
+        leftGroup.appendChild(tickerEl);
         const priceEl = document.createElement("div");
         priceEl.className = "price";
         priceEl.textContent = "$" + signal.price;
-        row.appendChild(priceEl);
-
+        leftGroup.appendChild(priceEl);
+        row.appendChild(leftGroup);
+        const rightGroup = document.createElement("div");
+        rightGroup.className = "right-group";
+        rightGroup.style.marginLeft = "auto";
+        const momentumEl = document.createElement("div");
+        momentumEl.className = "momentum";
+        const momentumValue = parseFloat(signal.momentum);
+        momentumEl.textContent = momentumValue.toFixed(2);
+        rightGroup.appendChild(momentumEl);
         const strengthEl = document.createElement("div");
-        strengthEl.className = "strength right-align";
+        strengthEl.className = "strength";
         const strengthValue = parseFloat(signal.strength[selectedField]);
         strengthEl.textContent = strengthValue.toFixed(2);
         if (strengthValue < 0) {
@@ -201,10 +252,17 @@
         } else if (strengthValue > 0) {
           strengthEl.classList.add("positive");
         }
-        row.appendChild(strengthEl);
-
+        rightGroup.appendChild(strengthEl);
+        row.appendChild(rightGroup);
         card.appendChild(row);
-
+        const nameEl = document.createElement("div");
+        nameEl.className = "ticker-name";
+        nameEl.textContent = signal.name;
+        card.appendChild(nameEl);
+        const tagsEl = document.createElement("div");
+        tagsEl.className = "tags";
+        tagsEl.textContent = signal.tags.join(", ");
+        card.appendChild(tagsEl);
         let actionText = "";
         const buySignalThreshold = 100;
         const sellSignalThreshold = 110;
@@ -222,50 +280,56 @@
         }
         return card;
       }
-
       function createMomentumCard(signal) {
         const card = document.createElement("div");
         card.className = "card";
+        if (signal.type === "ETF") {
+          card.style.backgroundColor = "#e0f7ff";
+        }
         const row = document.createElement("div");
         row.className = "card-row";
-
         const tickerEl = document.createElement("div");
         tickerEl.className = "ticker";
         tickerEl.textContent = signal.ticker;
         row.appendChild(tickerEl);
-
+        const rightGroup = document.createElement("div");
+        rightGroup.className = "right-group";
+        rightGroup.style.marginLeft = "auto";
         const momentumEl = document.createElement("div");
-        momentumEl.className = "strength right-align";
+        momentumEl.className = "momentum-black";
         const momentumValue = parseFloat(signal.momentum);
         momentumEl.textContent = momentumValue.toFixed(2);
-        row.appendChild(momentumEl);
-
+        rightGroup.appendChild(momentumEl);
+        row.appendChild(rightGroup);
         card.appendChild(row);
+        const nameEl = document.createElement("div");
+        nameEl.className = "ticker-name";
+        nameEl.textContent = signal.name;
+        card.appendChild(nameEl);
+        const tagsEl = document.createElement("div");
+        tagsEl.className = "tags";
+        tagsEl.textContent = signal.tags.join(", ");
+        card.appendChild(tagsEl);
         return card;
       }
-
       function updateUI(mode) {
         const selectedField =
           mode === "conservative" ? "conservative" : "aggressive";
-
         const buySignals = tradeSignalsData.filter(
           (signal) => parseFloat(signal.strength[selectedField]) <= 0
         );
         const sellSignals = tradeSignalsData.filter(
           (signal) => parseFloat(signal.strength[selectedField]) > 0
         );
-
         const momentumSignals = [...tradeSignalsData];
         momentumSignals.sort(
           (a, b) => parseFloat(b.momentum) - parseFloat(a.momentum)
         );
-
         document.getElementById("momentum-cards").innerHTML = "";
         const momentumContainer = document.getElementById("momentum-cards");
         momentumSignals.forEach((signal) => {
           momentumContainer.appendChild(createMomentumCard(signal));
         });
-
         buySignals.sort(
           (a, b) =>
             parseFloat(a.strength[selectedField]) -
@@ -276,21 +340,17 @@
             parseFloat(b.strength[selectedField]) -
             parseFloat(a.strength[selectedField])
         );
-
         document.getElementById("buy-cards").innerHTML = "";
         document.getElementById("sell-cards").innerHTML = "";
-
         const buyContainer = document.getElementById("buy-cards");
         buySignals.forEach((signal) => {
           buyContainer.appendChild(createCard(signal, selectedField));
         });
-
         const sellContainer = document.getElementById("sell-cards");
         sellSignals.forEach((signal) => {
           sellContainer.appendChild(createCard(signal, selectedField));
         });
       }
-
       function fetchData(period) {
         document.getElementById("loading").style.display = "block";
         document.getElementById("columns").style.display = "none";
@@ -313,15 +373,12 @@
             document.getElementById("loading").style.display = "none";
           });
       }
-
       const initialPeriod = document.getElementById("period").value;
       fetchData(initialPeriod);
-
       document.getElementById("mode").addEventListener("change", function () {
         const newMode = this.value;
         updateUI(newMode);
       });
-
       document.getElementById("period").addEventListener("change", function () {
         const newPeriod = this.value;
         fetchData(newPeriod);
