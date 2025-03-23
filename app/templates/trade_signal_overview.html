@@ -174,11 +174,6 @@
           <option value="6mo" selected>6 Month</option>
           <option value="3mo">3 Month</option>
         </select>
-        <label for="mode">Mode:</label>
-        <select id="mode">
-          <option value="conservative" selected>Conservative</option>
-          <option value="aggressive">Aggressive</option>
-        </select>
       </div>
       <div id="loading">Loading...</div>
       <div class="columns" id="columns" style="display: none">
@@ -215,62 +210,81 @@
           "Data Query: " + formatted;
       }
       updateTimestamp();
+
       let tradeSignalsData = null;
-      function createCard(signal, selectedField) {
+
+      function createCard(signal) {
         const card = document.createElement("div");
         card.className = "card";
+
         if (signal.type === "ETF") {
           card.style.backgroundColor = "#e0f7ff";
         }
+
         const row = document.createElement("div");
         row.className = "card-row";
+
         const leftGroup = document.createElement("div");
         leftGroup.className = "left-group";
+
         const tickerEl = document.createElement("div");
         tickerEl.className = "ticker";
         tickerEl.textContent = signal.ticker;
         leftGroup.appendChild(tickerEl);
+
         const priceEl = document.createElement("div");
         priceEl.className = "price";
         priceEl.textContent = "$" + signal.price;
         leftGroup.appendChild(priceEl);
+
         row.appendChild(leftGroup);
+
         const rightGroup = document.createElement("div");
         rightGroup.className = "right-group";
         rightGroup.style.marginLeft = "auto";
+
         const momentumEl = document.createElement("div");
         momentumEl.className = "momentum";
         const momentumValue = parseFloat(signal.momentum);
         momentumEl.textContent = momentumValue.toFixed(2);
         rightGroup.appendChild(momentumEl);
+
         const strengthEl = document.createElement("div");
         strengthEl.className = "strength";
-        const strengthValue = parseFloat(signal.strength[selectedField]);
+        const strengthValue = parseFloat(signal.strength.conservative);
         strengthEl.textContent = strengthValue.toFixed(2);
+
         if (strengthValue < 0) {
           strengthEl.classList.add("negative");
         } else if (strengthValue > 0) {
           strengthEl.classList.add("positive");
         }
+
         rightGroup.appendChild(strengthEl);
         row.appendChild(rightGroup);
+
         card.appendChild(row);
+
         const nameEl = document.createElement("div");
         nameEl.className = "ticker-name";
         nameEl.textContent = signal.name;
         card.appendChild(nameEl);
+
         const tagsEl = document.createElement("div");
         tagsEl.className = "tags";
         tagsEl.textContent = signal.tags.join(", ");
         card.appendChild(tagsEl);
-        let actionText = "";
+
         const buySignalThreshold = 100;
         const sellSignalThreshold = 110;
+
+        let actionText = "";
         if (strengthValue <= -buySignalThreshold) {
           actionText = "BUY";
         } else if (strengthValue >= sellSignalThreshold) {
           actionText = "SELL";
         }
+
         if (actionText) {
           const actionLabel = document.createElement("div");
           actionLabel.className =
@@ -278,89 +292,106 @@
           actionLabel.textContent = actionText;
           card.appendChild(actionLabel);
         }
+
         return card;
       }
+
       function createMomentumCard(signal) {
         const card = document.createElement("div");
         card.className = "card";
+
         if (signal.type === "ETF") {
           card.style.backgroundColor = "#e0f7ff";
         }
+
         const row = document.createElement("div");
         row.className = "card-row";
+
         const tickerEl = document.createElement("div");
         tickerEl.className = "ticker";
         tickerEl.textContent = signal.ticker;
         row.appendChild(tickerEl);
+
         const rightGroup = document.createElement("div");
         rightGroup.className = "right-group";
         rightGroup.style.marginLeft = "auto";
+
         const momentumEl = document.createElement("div");
         momentumEl.className = "momentum-black";
         const momentumValue = parseFloat(signal.momentum);
         momentumEl.textContent = momentumValue.toFixed(2);
         rightGroup.appendChild(momentumEl);
+
         row.appendChild(rightGroup);
         card.appendChild(row);
+
         const nameEl = document.createElement("div");
         nameEl.className = "ticker-name";
         nameEl.textContent = signal.name;
         card.appendChild(nameEl);
+
         const tagsEl = document.createElement("div");
         tagsEl.className = "tags";
         tagsEl.textContent = signal.tags.join(", ");
         card.appendChild(tagsEl);
+
         return card;
       }
-      function updateUI(mode) {
-        const selectedField =
-          mode === "conservative" ? "conservative" : "aggressive";
+
+      function updateUI() {
         const buySignals = tradeSignalsData.filter(
-          (signal) => parseFloat(signal.strength[selectedField]) <= 0
+          (signal) => parseFloat(signal.strength.conservative) <= 0
         );
         const sellSignals = tradeSignalsData.filter(
-          (signal) => parseFloat(signal.strength[selectedField]) > 0
+          (signal) => parseFloat(signal.strength.conservative) > 0
         );
+
         const momentumSignals = [...tradeSignalsData];
         momentumSignals.sort(
           (a, b) => parseFloat(b.momentum) - parseFloat(a.momentum)
         );
+
+        // Momentum
         document.getElementById("momentum-cards").innerHTML = "";
-        const momentumContainer = document.getElementById("momentum-cards");
         momentumSignals.forEach((signal) => {
-          momentumContainer.appendChild(createMomentumCard(signal));
+          document
+            .getElementById("momentum-cards")
+            .appendChild(createMomentumCard(signal));
         });
+
+        // Buy
         buySignals.sort(
           (a, b) =>
-            parseFloat(a.strength[selectedField]) -
-            parseFloat(b.strength[selectedField])
-        );
-        sellSignals.sort(
-          (a, b) =>
-            parseFloat(b.strength[selectedField]) -
-            parseFloat(a.strength[selectedField])
+            parseFloat(a.strength.conservative) -
+            parseFloat(b.strength.conservative)
         );
         document.getElementById("buy-cards").innerHTML = "";
-        document.getElementById("sell-cards").innerHTML = "";
-        const buyContainer = document.getElementById("buy-cards");
         buySignals.forEach((signal) => {
-          buyContainer.appendChild(createCard(signal, selectedField));
+          document.getElementById("buy-cards").appendChild(createCard(signal));
         });
-        const sellContainer = document.getElementById("sell-cards");
+
+        // Sell
+        sellSignals.sort(
+          (a, b) =>
+            parseFloat(b.strength.conservative) -
+            parseFloat(a.strength.conservative)
+        );
+        document.getElementById("sell-cards").innerHTML = "";
         sellSignals.forEach((signal) => {
-          sellContainer.appendChild(createCard(signal, selectedField));
+          document.getElementById("sell-cards").appendChild(createCard(signal));
         });
       }
+
       function fetchData(period) {
         document.getElementById("loading").style.display = "block";
         document.getElementById("columns").style.display = "none";
+
         fetch("/trade_signals?period=" + period)
           .then((response) => response.json())
           .then((data) => {
             tradeSignalsData = data.results;
             updateTimestamp();
-            const currentMode = document.getElementById("mode").value;
-            updateUI(currentMode);
+            updateUI();
             document.getElementById("loading").style.display = "none";
             document.getElementById("columns").style.display = "flex";
           })
@@ -373,15 +404,12 @@
             document.getElementById("loading").style.display = "none";
           });
       }
+
       const initialPeriod = document.getElementById("period").value;
       fetchData(initialPeriod);
-      document.getElementById("mode").addEventListener("change", function () {
-        const newMode = this.value;
-        updateUI(newMode);
-      });
+
       document.getElementById("period").addEventListener("change", function () {
-        const newPeriod = this.value;
-        fetchData(newPeriod);
+        fetchData(this.value);
       });
     </script>
   </body>
