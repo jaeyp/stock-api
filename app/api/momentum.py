@@ -134,11 +134,18 @@ def weighted_median(values, weights):
 def calculate_volume_profile(data, bins=20):
     prices = data['Close'].values
     volumes = data['Volume'].values
+
+    # Compute histogram for volume profile
     hist, bin_edges = np.histogram(prices, bins=bins, weights=volumes)
     max_index = np.argmax(hist)
     vp_peak = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
+
+    # Calculate weighted median from raw data
     vp_median = weighted_median(prices, volumes)
-    return vp_peak, vp_median, hist, bin_edges
+
+    # Calculate volume-weighted average price
+    vp_average = np.average(prices, weights=volumes)
+    return vp_peak, vp_median, vp_average, hist, bin_edges
 
 def calculate_smi(data, k_period=10, k_smoothing=3, k_double_smoothing=3, d_period=10):
     highest_high = data['High'].rolling(window=k_period, min_periods=1).max()
@@ -317,12 +324,12 @@ def get_stocks_data2(tickers: List[str], period: str = '1y', reference_date=None
 def dual_signal_score(
     series_a: pd.Series,
     series_b: pd.Series,
-    window_slope: int = 3,
-    weight_primary: float = -1.0,     # Weight for the primary indicator (x)
+    window_slope: int = 5,
+    weight_primary: float = -0.8,     # Weight for the primary indicator (x)
     weight_slope: float = 3.0,        # Weight for the slope of the primary indicator (y)
     weight_diff: float = 3.0,         # Weight for the difference between the primary and secondary indicators (z)
     weight_synergy: float = 10.0,     # Weight for the synergy term
-    weight_diff_change: float = 5.0,  # Weight for the adjustment based on the change in difference
+    weight_diff_change: float = 8.0,  # Weight for the adjustment based on the change in difference
     scaling_factor: float = 10.0      # Scaling factor to avoid tanh saturation
 ) -> pd.Series:
     """
@@ -471,6 +478,7 @@ def analyze(data, mode="conservative", reference_date=None):
     score_MACD = weights['MACD'] * raw_MACD
 
     smi_scores = dual_signal_score(smi_k_series, smi_d_series)
+    print('SMI ===>', smi_scores, '<===')
     raw_SMI = smi_scores.iloc[-1]
     score_SMI = weights['SMI'] * raw_SMI
 
@@ -492,8 +500,8 @@ def analyze(data, mode="conservative", reference_date=None):
         raw_div = 0.0
     score_div = weights['DIV'] * raw_div
 
-    vp_peak, vp_median, _, _ = calculate_volume_profile(window_data, bins=20)
-    selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
+    vp_peak, vp_median, vp_average, _, _ = calculate_volume_profile(window_data, bins=20)
+    selected_vp = min(vp_peak, vp_average) if mode == "conservative" else max(vp_peak, vp_median)
     distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
     raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
     score_VP = weights['VP'] * raw_VP
@@ -544,7 +552,7 @@ def analyze(data, mode="conservative", reference_date=None):
         "BollingerBands": {"raw": round(raw_BB, 2), "score": round(score_BB, 2)},
         "Ichimoku": {"raw": round(raw_Ichi, 2), "score": round(score_Ichi, 2)},
         "Divergence": {"raw": round(raw_div, 2), "score": round(score_div, 2)},
-        "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2), "vp_median": round(vp_median, 2)},
+        "VolumeProfile": {"raw": round(raw_VP, 2), "score": round(score_VP, 2), "vp_peak": round(vp_peak, 2), "vp_median": round(vp_median, 2), "vp_average": round(vp_average, 2)},
         "BalanceVolumeRatio": {"raw": round(raw_Vol, 2), "score": round(score_Vol, 2)},
         "OBV": {"raw": round(norm_OBV, 2), "score": round(score_OBV, 2)},
         "MACD": {"raw": round(raw_MACD, 2), "score": round(score_MACD, 2)},
@@ -656,8 +664,8 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
             score_div = weights['DIV'] * raw_div
 
             # 7. Volume Profile
-            vp_peak, vp_median, _, _ = calculate_volume_profile(window_data, bins=20)
-            selected_vp = min(vp_peak, vp_median) if mode == "conservative" else max(vp_peak, vp_median)
+            vp_peak, vp_median, vp_average, _, _ = calculate_volume_profile(window_data, bins=20)
+            selected_vp = min(vp_peak, vp_average) if mode == "conservative" else max(vp_peak, vp_median)
             distance = (latest_close - selected_vp) / selected_vp if selected_vp != 0 else 0.0
             raw_VP = - distance * 10 if distance > 0 else abs(distance) * 10
             score_VP = weights['VP'] * raw_VP
