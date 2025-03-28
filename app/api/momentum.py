@@ -32,17 +32,14 @@ def get_weight_set(mode: str):
             "RSI": 1,
             "MACD":  1,
             "SMI": 1,
-            "BB": 0, # exclude BB 10,
+            "BB": 10,
             "ICHIMOKU": 40,
             "DIV": 2,
-            "VP": 4,
-            "VOL": 2,
+            "VP": 2,
+            "VOL": 0,   # exclude Volume Ratio 2,
             "OBV": 1,
             "FIB": 0,   # exclude FIB 1,
         }
-    
-# Configurable slope window sizes
-SMI_SLOPE_WINDOW = 2
 
 # Default settings
 USE_NORMALIZE_MOMENTUM_STRENGTH = False
@@ -200,6 +197,30 @@ def compute_obv(data):
             obv_values.append(obv_values[-1])
     return pd.Series(obv_values, index=data.index)
 
+def compute_moving_obv(data, window=120):
+    # Select the last 'window' days and reset the index to ensure consecutive integer index
+    window_data = data.iloc[-window:].reset_index(drop=True)
+    close_series = window_data["Close"]
+    volume_series = window_data["Volume"]
+    
+    # Ensure these are Series; if they are DataFrames, convert them to Series by taking the first column.
+    if isinstance(close_series, pd.DataFrame):
+        close_series = close_series.iloc[:, 0]
+    if isinstance(volume_series, pd.DataFrame):
+        volume_series = volume_series.iloc[:, 0]
+    
+    obv_values = [0]
+    for i in range(1, len(close_series)):
+        if close_series.iat[i] > close_series.iat[i-1]:
+            obv_values.append(obv_values[-1] + volume_series.iat[i])
+        elif close_series.iat[i] < close_series.iat[i-1]:
+            obv_values.append(obv_values[-1] - volume_series.iat[i])
+        else:
+            obv_values.append(obv_values[-1])
+            
+    # Return with the same (reset) index
+    return pd.Series(obv_values, index=window_data.index)
+
 def normalize_scores_tanh(momentum_strength):
     scores = np.array(list(momentum_strength.values()))
     
@@ -271,7 +292,6 @@ def get_stock_data2(ticker, period='1y', reference_date=None):
     start = start_date.strftime("%Y-%m-%d")
     end = (reference_date + timedelta(days=1)).strftime("%Y-%m-%d") # Set the end date to the day after the reference_date
 
-    print('get_stock_data2', start, end)
     stock_data = yf.download(
         ticker,
         start=start,
@@ -478,7 +498,6 @@ def analyze(data, mode="conservative", reference_date=None):
     score_MACD = weights['MACD'] * raw_MACD
 
     smi_scores = dual_signal_score(smi_k_series, smi_d_series)
-    print('SMI ===>', smi_scores, '<===')
     raw_SMI = smi_scores.iloc[-1]
     score_SMI = weights['SMI'] * raw_SMI
 
@@ -513,10 +532,12 @@ def analyze(data, mode="conservative", reference_date=None):
     raw_Vol = - (volume_ratio - 1) if latest_close < previous_close else (volume_ratio - 1)
     score_Vol = weights['VOL'] * raw_Vol
 
-    obv_series = compute_obv(window_data)
+    #obv_series = compute_obv(window_data)
+    obv_series = compute_moving_obv(window_data)    
     obv_latest = float(obv_series.iloc[-1])
     obv_min = float(obv_series.min())
     obv_max = float(obv_series.max())
+    print('OBV: ', obv_series[-10:], 'latest: ', obv_latest, 'min: ', obv_min, 'max: ', obv_max, 'raw: ', ((obv_latest - obv_min) / (obv_max - obv_min)), 'score: ', ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10)
     if obv_max != obv_min:
         norm_OBV = ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10
     else:
@@ -591,16 +612,17 @@ def parse_period_to_relativedelta(period_str: str):
     else:
         raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
 
-def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
+def analyze_all(data, mode="conservative", analysis_period='6mo', normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
     weights = get_weight_set(mode)
     momentum_strength = {}
     close_prices = {}
     
     period_delta = parse_period_to_relativedelta(analysis_period)
+    offset = math.ceil(len(data) / 2) # data has double period
 
-    for i in range(1, len(data)):
+    for i in range(1, len(data) // 2): # data has double period
         try:
-            current_date = data.index[i]
+            current_date = data.index[i + offset]
             window_start = current_date - period_delta
             window_data = data[(data.index >= window_start) & (data.index <= current_date)]
             if len(window_data) < 2:
@@ -682,7 +704,8 @@ def analyze_all(data, mode="conservative", analysis_period='1y', normalize=USE_N
             score_Vol = weights['VOL'] * raw_Vol
 
             # 9. On-Balance Volume
-            obv_series = compute_obv(window_data)
+            #obv_series = compute_obv(window_data)
+            obv_series = compute_moving_obv(window_data)
             obv_latest = float(obv_series.iloc[-1])
             obv_min = float(obv_series.min())
             obv_max = float(obv_series.max())
@@ -772,11 +795,11 @@ def double_period(period: str) -> str:
         raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
 
 @router.get("/{ticker}/momentum_all", response_model=MomentumStrengthResponse)
-async def analyze_stock_all(ticker: str, period: str = '1y', mode: str = "conservative"):
+async def analyze_stock_all(ticker: str, period: str = '1y', mode: str = "conservative", reference_date=None):
     try:
         # Download data for twice the period to obtain proper historical data for analysis.
         extended_period = double_period(period)
-        data = get_stock_data2(ticker, period=extended_period)
+        data = get_stock_data2(ticker, extended_period, reference_date)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching data for {ticker}: {str(e)}")
     if data.empty:

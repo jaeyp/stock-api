@@ -15,11 +15,34 @@ AGGRESSIVE_SELL_THRESHOLD = 100
 
 router = APIRouter()
 
+def double_period(period: str) -> str:
+    period = period.lower().strip()
+    if period.endswith('y'):
+        num = int(period[:-1])
+        return f"{num * 2}y"
+    elif period.endswith('mo'):
+        num = int(period[:-2])
+        doubled = num * 2
+
+        if doubled % 12 == 0:
+            years = doubled // 12
+            return f"{years}y"
+        else:
+            return f"{doubled}mo"
+    elif period.endswith('d'):
+        num = int(period[:-1])
+        return f"{num * 2}d"
+    else:
+        raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
+
 @router.get("/{ticker}/chart/trade_signal")
-async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conservative", reference_date=None):
+async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conservative", reference_date=None):
     try:
         # 1. Get ticker data
-        data = get_stock_data2(ticker, period, reference_date)
+        # Download data for twice the period to obtain proper historical data for analysis.
+        extended_period = double_period(period)
+        data = get_stock_data2(ticker, extended_period, reference_date)
+
         if data.empty:
             raise HTTPException(status_code=400, detail="No data fetched for the given ticker.")
 
@@ -155,4 +178,4 @@ async def get_stock_graph(ticker: str, period: str = '1y', mode: str = "conserva
         return {"image": f"data:image/png;base64,{image_base64}"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating graph: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating graph for {ticker}: {str(e)}")
