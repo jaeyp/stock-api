@@ -344,13 +344,13 @@ def get_stocks_data2(tickers: List[str], period: str = '1y', reference_date=None
 def dual_signal_score(
     series_a: pd.Series,
     series_b: pd.Series,
-    window_slope: int = 5,
-    weight_primary: float = -0.8,     # Weight for the primary indicator (x)
+    window_slope: int = 3,
+    weight_primary: float = -0.6,     # Weight for the primary indicator (x)
     weight_slope: float = 3.0,        # Weight for the slope of the primary indicator (y)
     weight_diff: float = 3.0,         # Weight for the difference between the primary and secondary indicators (z)
     weight_synergy: float = 10.0,     # Weight for the synergy term
-    weight_diff_change: float = 8.0,  # Weight for the adjustment based on the change in difference
-    scaling_factor: float = 10.0      # Scaling factor to avoid tanh saturation
+    weight_diff_change: float = 7.5,  # Weight for the adjustment based on the change in difference
+    scaling_factor: float = 100.0      # Scaling factor to avoid tanh saturation
 ) -> pd.Series:
     """
     A formula-based scoring function for two related signals that calculates:
@@ -498,6 +498,7 @@ def analyze(data, mode="conservative", reference_date=None):
     score_MACD = weights['MACD'] * raw_MACD
 
     smi_scores = dual_signal_score(smi_k_series, smi_d_series)
+    #print('SMI scores: ', smi_scores[-30:])
     raw_SMI = smi_scores.iloc[-1]
     score_SMI = weights['SMI'] * raw_SMI
 
@@ -537,7 +538,7 @@ def analyze(data, mode="conservative", reference_date=None):
     obv_latest = float(obv_series.iloc[-1])
     obv_min = float(obv_series.min())
     obv_max = float(obv_series.max())
-    print('OBV: ', obv_series[-10:], 'latest: ', obv_latest, 'min: ', obv_min, 'max: ', obv_max, 'raw: ', ((obv_latest - obv_min) / (obv_max - obv_min)), 'score: ', ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10)
+    #print('OBV: ', obv_series[-10:], 'latest: ', obv_latest, 'min: ', obv_min, 'max: ', obv_max, 'raw: ', ((obv_latest - obv_min) / (obv_max - obv_min)), 'score: ', ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10)
     if obv_max != obv_min:
         norm_OBV = ((obv_latest - obv_min) / (obv_max - obv_min)) * 20 - 10
     else:
