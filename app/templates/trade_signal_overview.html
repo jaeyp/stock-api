@@ -230,6 +230,9 @@
         const tickerEl = document.createElement("div");
         tickerEl.className = "ticker";
         tickerEl.textContent = signal.ticker;
+        if (signal.favorite) {
+          tickerEl.style.color = "red";
+        }
         leftGroup.appendChild(tickerEl);
 
         const priceEl = document.createElement("div");
@@ -310,6 +313,9 @@
         const tickerEl = document.createElement("div");
         tickerEl.className = "ticker";
         tickerEl.textContent = signal.ticker;
+        if (signal.favorite) {
+          tickerEl.style.color = "red";
+        }
         row.appendChild(tickerEl);
 
         const rightGroup = document.createElement("div");
