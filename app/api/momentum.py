@@ -8,6 +8,7 @@ from typing import List
 from pytz import timezone
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+import traceback
 
 router = APIRouter()
 
@@ -129,20 +130,32 @@ def weighted_median(values, weights):
     return float(sorted_values[median_index])
 
 def calculate_volume_profile(data, bins=20):
-    prices = data['Close'].values
-    volumes = data['Volume'].values
+    # Filter out NaN values
+    valid_mask = ~(data['Close'].isna() | data['Volume'].isna())
+    prices = data['Close'][valid_mask].values
+    volumes = data['Volume'][valid_mask].values
+    
+    if len(prices) == 0:
+        return 0.0, 0.0, 0.0, None, None
+    
+    if len(prices) < bins:
+        bins = max(1, len(prices) // 2)
+    
+    try:
+        # Compute histogram for volume profile
+        hist, bin_edges = np.histogram(prices, bins=bins, weights=volumes)
+        max_index = np.argmax(hist)
+        vp_peak = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
 
-    # Compute histogram for volume profile
-    hist, bin_edges = np.histogram(prices, bins=bins, weights=volumes)
-    max_index = np.argmax(hist)
-    vp_peak = (bin_edges[max_index] + bin_edges[max_index+1]) / 2
+        # Calculate weighted median from raw data
+        vp_median = weighted_median(prices, volumes)
 
-    # Calculate weighted median from raw data
-    vp_median = weighted_median(prices, volumes)
-
-    # Calculate volume-weighted average price
-    vp_average = np.average(prices, weights=volumes)
-    return vp_peak, vp_median, vp_average, hist, bin_edges
+        # Calculate volume-weighted average price
+        vp_average = np.average(prices, weights=volumes)
+        
+        return vp_peak, vp_median, vp_average, hist, bin_edges
+    except Exception as e:
+        return 0.0, 0.0, 0.0, None, None
 
 def calculate_smi(data, k_period=10, k_smoothing=3, k_double_smoothing=3, d_period=10):
     highest_high = data['High'].rolling(window=k_period, min_periods=1).max()
@@ -224,8 +237,14 @@ def compute_moving_obv(data, window=120):
 def normalize_scores_tanh(momentum_strength):
     scores = np.array(list(momentum_strength.values()))
     
-    mean = scores.mean()
-    std = scores.std()
+    # Filter out NaN values
+    valid_scores = scores[~np.isnan(scores)]
+    
+    if len(valid_scores) == 0:
+        return momentum_strength  # Return original values if all scores are NaN
+        
+    mean = valid_scores.mean()
+    std = valid_scores.std()
 
     if std == 0:
         normalized_scores = np.zeros_like(scores)
@@ -236,8 +255,12 @@ def normalize_scores_tanh(momentum_strength):
     return dict(zip(momentum_strength.keys(), normalized_scores))
 
 def exponential_scale(score, min_val, max_val, alpha=1.0, range=20):
-    normalized = (score - min_val) / (max_val - min_val)
-    normalized = 2 * normalized - 1
+    if max_val == min_val:
+        print("exponential_scale", score - min_val, max_val, min_val)
+        normalized = 1;
+    else:
+        normalized = (score - min_val) / (max_val - min_val)
+        normalized = 2 * normalized - 1
     scaled = range * math.copysign((math.exp(alpha * abs(normalized)) - 1) / (math.exp(alpha) - 1), normalized)
     return scaled
 
@@ -614,21 +637,35 @@ def parse_period_to_relativedelta(period_str: str):
         raise ValueError("Unsupported period format. Use '1y', '6mo', '30d', etc.")
 
 def analyze_all(data, mode="conservative", analysis_period='6mo', normalize=USE_NORMALIZE_MOMENTUM_STRENGTH):
+    if data.empty:
+        return {"close": {}, "momentum_strength": {}}
+        
+    if data['Close'].isna().all().item():
+        return {"close": {}, "momentum_strength": {}}
+        
+    if data['Volume'].isna().all().item():
+        return {"close": {}, "momentum_strength": {}}
+    
     weights = get_weight_set(mode)
     momentum_strength = {}
     close_prices = {}
     
     period_delta = parse_period_to_relativedelta(analysis_period)
-    offset = math.ceil(len(data) / 2) # data has double period
-
-    for i in range(1, len(data) // 2): # data has double period
+    offset = math.ceil(len(data) / 2)
+    
+    for i in range(1, len(data) // 2):
         try:
             current_date = data.index[i + offset]
             window_start = current_date - period_delta
             window_data = data[(data.index >= window_start) & (data.index <= current_date)]
+            
             if len(window_data) < 2:
                 continue
-
+                
+            if window_data['Close'].isna().any().item() or window_data['Volume'].isna().any().item():
+                continue
+                
+            # Calculate indicators for the window_data
             rsi_series = calculate_rsi(window_data)
             upper_band, lower_band = calculate_bollinger_bands(window_data)
             window_data_copy = window_data.copy()
@@ -697,7 +734,7 @@ def analyze_all(data, mode="conservative", analysis_period='6mo', normalize=USE_
             # 8. Volume Ratio
             rolling_volume = window_data['Volume'].rolling(window=20).mean()
             if rolling_volume.dropna().empty:
-                avg_volume = 0.0 # window_data['Volume'].mean()?? instead of 0.0
+                avg_volume = 0.0
             else:
                 avg_volume = np.nanmean(rolling_volume.values)
             volume_ratio = latest_volume / avg_volume if avg_volume != 0 else 1.0
@@ -705,7 +742,6 @@ def analyze_all(data, mode="conservative", analysis_period='6mo', normalize=USE_
             score_Vol = weights['VOL'] * raw_Vol
 
             # 9. On-Balance Volume
-            #obv_series = compute_obv(window_data)
             obv_series = compute_moving_obv(window_data)
             obv_latest = float(obv_series.iloc[-1])
             obv_min = float(obv_series.min())
@@ -737,16 +773,28 @@ def analyze_all(data, mode="conservative", analysis_period='6mo', normalize=USE_
                 (raw_SMI, score_SMI),
                 (raw_FIB, score_FIB)
             ]
+            
             final_score = calculate_final_score(indicators_list)
+            
             date_str = current_date.strftime("%Y-%m-%d")
             momentum_strength[date_str] = final_score
             close_prices[date_str] = round(latest_close, 2)
 
         except Exception as e:
-            print(f"Error processing {current_date}: {e}")
+            print(f"❌ [ERROR] Error processing date {current_date}: {str(e)}")
+            print(f"Stack trace: {traceback.format_exc()}")
+            continue
 
     if normalize:
-        momentum_strength = normalize_scores_tanh(momentum_strength)            
+        valid_scores = {k: v for k, v in momentum_strength.items() if v is not None and not np.isnan(v)}
+        if valid_scores:
+            try:
+                normalized_scores = normalize_scores_tanh(valid_scores)
+                for date, score in normalized_scores.items():
+                    momentum_strength[date] = score
+            except Exception as e:
+                print(f"❌ [ERROR] Error normalizing scores: {str(e)}")
+                print(f"Stack trace: {traceback.format_exc()}")
 
     return {
         "close": close_prices,

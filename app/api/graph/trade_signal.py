@@ -7,6 +7,7 @@ import base64
 import matplotlib.dates as mdates
 from datetime import datetime
 from ..momentum import analyze_all, get_stock_data2
+import traceback
 
 CONSERVATIVE_BUY_THRESHOLD = 110
 AGGRESSIVE_BUY_THRESHOLD = 100
@@ -53,13 +54,24 @@ async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conserv
         close_prices = pd.Series(history["close"])
         momentum_strength = pd.Series(history["momentum_strength"])
 
+        # Filter out NaN values
+        valid_mask = ~(close_prices.isna() | momentum_strength.isna())
+        close_prices = close_prices[valid_mask]
+        momentum_strength = momentum_strength[valid_mask]
+
+        if len(close_prices) == 0 or len(momentum_strength) == 0:
+            raise HTTPException(status_code=400, detail="No valid data points after filtering NaN values.")
+
         # 4. Convert date index to datetime format
         close_prices.index = pd.to_datetime(close_prices.index)
         momentum_strength.index = pd.to_datetime(momentum_strength.index)
 
         # 5. Normalize Close values to the range -100 ~ 100
         min_close, max_close = close_prices.min(), close_prices.max()
-        scaled_close = ((close_prices - min_close) / (max_close - min_close)) * 200 - 100
+        if min_close == max_close:
+            scaled_close = pd.Series(0, index=close_prices.index)
+        else:
+            scaled_close = ((close_prices - min_close) / (max_close - min_close)) * 200 - 100
 
         # 6. Calculate difference (Scaled Close - Momentum Strength)
         diff_values = scaled_close - momentum_strength
@@ -82,16 +94,16 @@ async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conserv
             close_prices.index[buy_light_mask],
             scaled_close[buy_light_mask],
             color="#ffd8a8",  # light orange
-            marker="D",       # circle
-            s=90,
+            marker="o",       # circle
+            s=100,
             label="Buy Signal (Light)"
         )
         plt.scatter(
             close_prices.index[buy_extreme_mask],
             scaled_close[buy_extreme_mask],
             color="#fb5607",   # deep orange
-            marker="D",       # diamond
-            s=90,
+            marker="o",       # circle
+            s=100,
             label="Buy Signal (Extreme)"
         )
         # Sell signals:
@@ -99,7 +111,7 @@ async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conserv
             close_prices.index[sell_light_mask],
             scaled_close[sell_light_mask],
             color="#aedff7",  # light blue
-            marker="o",       # diamond
+            marker="o",       # circle
             s=100,
             label="Sell Signal (Light)"
         )
@@ -118,7 +130,7 @@ async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conserv
             group_values = scaled_close[mask]
             group_texts = [f"{price:.2f}" for price in close_prices[mask]]
             for i, txt in enumerate(group_texts):
-                plt.text(group_dates[i], group_values[i] - 6, txt,
+                plt.text(group_dates[i], group_values.iloc[i] - 6, txt,
                          fontsize=9, ha='center', color='black')
 
         # 11. Display the difference (Close - Momentum Strength) above each marker 
@@ -128,7 +140,7 @@ async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conserv
             group_diffs = diff_values[mask]
             for i, diff in enumerate(group_diffs):
                 color = 'blue' if diff > 0 else 'red'
-                plt.text(group_dates[i], group_values[i] + 3, f"{abs(diff):.2f}",
+                plt.text(group_dates[i], group_values.iloc[i] + 3, f"{abs(diff):.2f}",
                          fontsize=9, ha='center', color=color)
 
         # 12. Display the price at the beginning and end of Close Price
@@ -171,11 +183,13 @@ async def get_stock_graph(ticker: str, period: str = '6mo', mode: str = "conserv
 
         # 16. Convert the graph to Base64 and return
         buf = io.BytesIO()
-        plt.savefig(buf, format="png")
+        plt.savefig(buf, format="png", bbox_inches='tight', dpi=100)
         plt.close()
         buf.seek(0)
-        image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        image_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         return {"image": f"data:image/png;base64,{image_base64}"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating graph for {ticker}: {str(e)}")
+        print(f"❌ [ERROR] Error generating trade signal chart for {ticker}: {str(e)}")
+        print(f"Stack trace: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))

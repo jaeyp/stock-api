@@ -148,7 +148,7 @@
       const etfGroup1Tickers = ["VOO", "QQQ", "IWF", "IWM", "SOXX", "SMH"];
       const etfGroup2Tickers = [
         "QLD",
-        "UWM",
+        "USD",
         "TQQQ",
         "SQQQ",
         "SOXL",
@@ -194,29 +194,43 @@
         "NVO",
         "LUNR",
       ];
-      const favoriteTickersNabak = ["AMZN", "CRM", "UBER"];
+      const favoriteTickersNabak = ["CRM", "UBER"];
       const otherTickers = [
         "AAPL",
+        "AMZN",
         "MSFT",
         "GOOG",
         "META",
         "NVDA",
+        "AVGO",
         "TSLA",
         "PLTR",
         "RGTI",
-        "IONQ",
       ];
-      const canadaTickers = [
-        "RY.TO",
-        "BMO.TO",
-        "CM.TO",
-        "CNQ.TO",
-        "IMO.TO",
-        "FTS.TO",
-        "CPX.TO",
-        "BDT.TO",
-        "ATZ.TO",
-        "QBR-B.TO",
+      const leverage2xTickers = [
+        "LLYX",
+        //"ELIL",
+        "PTIR",
+        "NVDL",
+        "AVL",
+        "AAPB",
+        "AMZZ",
+        "MSFL",
+        "FBL",
+        //"TSLR",
+        "RDTL",
+        "CONL",
+        "GGLL",
+        // "RY.TO",
+        // "BMO.TO",
+        // "CM.TO",
+        // "CNQ.TO",
+        // "IMO.TO",
+        // "FTS.TO",
+        // "CPX.TO",
+        // "BDT.TO",
+        // "ATZ.TO",
+        // "QBR-B.TO",
       ];
 
       window.onload = function () {
@@ -283,7 +297,7 @@
           };
           otherTickerContainer.appendChild(btn);
         });
-        canadaTickers.forEach((ticker) => {
+        leverage2xTickers.forEach((ticker) => {
           let btn = document.createElement("button");
           btn.innerText = ticker;
           btn.className = "ticker-canada-button";

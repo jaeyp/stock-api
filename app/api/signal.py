@@ -24,12 +24,37 @@ DEFAULT_TICKERS: List[TickerInfo] = [
     TickerInfo(ticker="SOXX", name="iShares Semiconductor ETF", type="ETF", tags=["Index", "Growth"], favorite=False),
     TickerInfo(ticker="SMH", name="VanEck Semiconductor ETF", type="ETF", tags=["Index", "Growth"], favorite=False),
     TickerInfo(ticker="QLD", name="ProShares Ultra QQQ", type="ETF", tags=["Leveraged", "Index", "Growth"], favorite=True),
-    TickerInfo(ticker="UWM", name="ProShares Ultra Russell2000", type="ETF", tags=["Leveraged", "Index", "Growth"], favorite=False),
+    TickerInfo(ticker="USD", name="ProShares Ultra Semiconductors ", type="ETF", tags=["Leveraged", "Index", "Growth"], favorite=False),
+    # 3x leverage ETFs
     TickerInfo(ticker="TQQQ", name="ProShares UltraPro QQQ", type="ETF", tags=["Leveraged", "Index", "Growth"], favorite=False),
     TickerInfo(ticker="SQQQ", name="ProShares UltraPro Short QQQ", type="ETF", tags=["Leveraged", "Alternative"], favorite=False),
     TickerInfo(ticker="SOXL", name="Direxion Daily Semiconductor Bull 3X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
     TickerInfo(ticker="LABU", name="Direxion Daily S&P Biotech Bull 3X Shares", type="ETF", tags=["Leveraged"], favorite=True),
     TickerInfo(ticker="BULZ", name="MicroSectors Solactive FANG Innovation 3X Leveraged ETNs", type="ETF", tags=["Leveraged", "Growth"], favorite=False),
+    # 2x leverage ETFs
+    TickerInfo(ticker="LLYX", name="Defiance Daily Target 2X Long LLY ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    # GraniteShares
+    TickerInfo(ticker="PTIR", name="GraniteShares 2x Long PLTR Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="NVDL", name="GraniteShares 2x Long NVDA Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="AAPB", name="GraniteShares 2x Long AAPL Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="AMZZ", name="GraniteShares 2x Long AMZN Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="MSFL", name="GraniteShares 2x Long MSFT Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="FBL", name="GraniteShares 2x Long META Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="TSLR", name="Graniteshares 2x Long TSLA Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="RDTL", name="GraniteShares 2x Long RDDT Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="CONL", name="GraniteShares 2x Long COIN Daily ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    # Direxion
+    #TickerInfo(ticker="ELIL", name="Direxion Daily LLY Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="AVL", name="Direxion Daily AVGO Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    TickerInfo(ticker="GGLL", name="Direxion Daily GOOGL Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="PLTU", name="Direxion Daily PLTR Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="NVDU", name="Direxion Daily Nvda Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="AAPU", name="Direxion Daily AAPL Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="AMZU", name="Direxion Daily AMZN Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="MSFU", name="Direxion Daily MSFT Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="METU", name="Direxion Daily META Bull 2X ETF", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    #TickerInfo(ticker="TSLL", name="Direxion Daily TSLA Bull 2X Shares", type="ETF", tags=["Leveraged", "Growth"], favorite=True),
+    # Others
     TickerInfo(ticker="GLD", name="SPDR Gold Shares", type="ETF", tags=["Alternative", "Defensive"], favorite=False),
     TickerInfo(ticker="BITX", name="2x Bitcoin Strategy ETF", type="ETF", tags=["Leveraged", "Alternative"], favorite=False),
     TickerInfo(ticker="KWEB", name="KraneShares CSI China Internet ETF", type="ETF", tags=["Alternative", "Index", "Growth"], favorite=False),
@@ -44,7 +69,7 @@ DEFAULT_TICKERS: List[TickerInfo] = [
     TickerInfo(ticker="ENPH", name="Enphase Energy, Inc.", type="Stock", tags=["Growth", "Innovation"], favorite=False),
     TickerInfo(ticker="PLUG", name="Plug Power Inc.", type="Stock", tags=["Growth", "Innovation"], favorite=False),
     TickerInfo(ticker="BE", name="Bloom Energy Corporation", type="Stock", tags=["Growth", "Innovation"], favorite=False),
-    TickerInfo(ticker="STRL", name="Sterling Construction Company", type="Stock", tags=["Growth", "Defensive"], favorite=True),
+    TickerInfo(ticker="STRL", name="Sterling Construction Company", type="Stock", tags=["Growth", "Defensive"], favorite=False),
     TickerInfo(ticker="BWXT", name="BWX Technologies, Inc.", type="Stock", tags=["Dividend", "Defensive"], favorite=False),
     TickerInfo(ticker="VST", name="Vistra Corp.", type="Stock", tags=["Growth", "Dividend", "Defensive"], favorite=False),
     TickerInfo(ticker="OKLO", name="Oklo Inc.", type="Stock", tags=["Growth", "Innovation"], favorite=True),
@@ -73,10 +98,14 @@ DEFAULT_TICKERS: List[TickerInfo] = [
     TickerInfo(ticker="AAPL", name="Apple Inc.", type="Stock", tags=["Dividend", "Growth"], favorite=False),
     TickerInfo(ticker="META", name="Meta Platforms, Inc.", type="Stock", tags=["Growth"], favorite=False),
     TickerInfo(ticker="NVDA", name="NVIDIA Corporation", type="Stock", tags=["Growth"], favorite=False),
+    TickerInfo(ticker="AVGO", name="Broadcom Inc.", type="Stock", tags=["Growth"], favorite=False),
     TickerInfo(ticker="TSLA", name="Tesla, Inc.", type="Stock", tags=["Growth"], favorite=False),
     TickerInfo(ticker="PLTR", name="Palantir Technologies Inc.", type="Stock", tags=["Growth", "Innovation"], favorite=False),
     TickerInfo(ticker="RGTI", name="Rigetti Computing, Inc.", type="Stock", tags=["Growth", "Innovation"], favorite=False),
     TickerInfo(ticker="IONQ", name="IonQ, Inc.", type="Stock", tags=["Growth", "Innovation"], favorite=False),
+    TickerInfo(ticker="MCD", name="McDonald's Corporation", type="Stock", tags=["Dividend", "Defensive"], favorite=False),
+    TickerInfo(ticker="WMT", name="Walmart Inc.", type="Stock", tags=["Dividend", "Defensive"], favorite=False),
+    TickerInfo(ticker="OLLI", name="Ollie's Bargain Outlet Holdings, Inc.", type="Stock", tags=["Defensive"], favorite=False),
 ]
 
 def get_ticker_info(symbol: str) -> TickerInfo:
@@ -131,32 +160,34 @@ async def get_trade_signals(
     tickers: List[str] = Query(default_factory=lambda: [info.ticker for info in DEFAULT_TICKERS], description="Comma-separated list of stock tickers"),
     period: str = '6mo'
 ):
-    print(f"Request URL: {request.url}")
-    print(f"Received tickers: {tickers}")
     if not tickers:
         tickers = [info.ticker for info in DEFAULT_TICKERS]
     trade_signal_results = []
+    
     try:
         stocks_data = get_stocks_data2(tickers, period)
     except Exception as e:
         print(f"❌ [ERROR] Error fetching stocks data: {str(e)}")
         return {"results": trade_signal_results}
+        
     is_multi = isinstance(stocks_data.columns, pd.MultiIndex)
+    
     for ticker in tickers:
         try:
             if is_multi:
                 if ticker not in stocks_data.columns.levels[0]:
-                    print(f"⚠️ [WARNING] No data fetched for {ticker}. Skipping...")
                     continue
                 ticker_data = stocks_data[ticker]
             else:
                 ticker_data = stocks_data
+                
             if ticker_data.empty:
-                print(f"⚠️ [WARNING] No data fetched for {ticker}. Skipping...")
                 continue
+                
             data_to_analyze = ticker_data[['Close', 'High', 'Low', 'Volume']].copy()
             conservative_results = analyze(data_to_analyze, "conservative")
             aggressive_results = analyze(data_to_analyze, "aggressive")
+            
             ticker_info = get_ticker_info(ticker)
             trade_signal_results.append({
                 "ticker": ticker,
@@ -174,5 +205,6 @@ async def get_trade_signals(
             })
         except Exception as e:
             print(f"❌ [ERROR] Error processing trade signal for {ticker}: {str(e)}")
+            
     trade_signal_results.sort(key=lambda x: float(x["strength"]["conservative"]))
     return {"results": trade_signal_results}
